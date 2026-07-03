@@ -1,0 +1,732 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Casebook — 入院管理を学びに変える</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#F5F8F9;
+    --surface:#FFFFFF;
+    --ink:#16242E;
+    --ink-soft:#5B6D78;
+    --ink-faint:#8A9AA4;
+    --line:#E1E8EC;
+    --line-soft:#EDF2F4;
+    --accent:#0E7A82;
+    --accent-deep:#0A5D63;
+    --accent-soft:#E4F2F2;
+    --study:#B26A0A;
+    --study-soft:#FBEFDC;
+    --done:#2E7D5B;
+    --done-soft:#E6F2EC;
+    --danger:#B23A3A;
+    --shadow:0 1px 2px rgba(22,36,46,.04),0 4px 16px rgba(22,36,46,.05);
+    --radius:14px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{-webkit-text-size-adjust:100%}
+  body{
+    font-family:"Inter","Noto Sans JP",system-ui,sans-serif;
+    background:var(--paper);color:var(--ink);
+    line-height:1.6;-webkit-font-smoothing:antialiased;
+    padding-bottom:64px;
+  }
+  .mono{font-family:"IBM Plex Mono",ui-monospace,monospace}
+  button{font-family:inherit;cursor:pointer;border:none;background:none}
+  input,textarea,select{font-family:inherit;font-size:15px;color:var(--ink)}
+  textarea{resize:vertical}
+
+  /* ---- top bar ---- */
+  .topbar{
+    position:sticky;top:0;z-index:20;background:rgba(245,248,249,.86);
+    backdrop-filter:blur(10px);border-bottom:1px solid var(--line);
+  }
+  .topbar-in{max-width:840px;margin:0 auto;padding:14px 20px;display:flex;align-items:center;gap:12px}
+  .brand{display:flex;flex-direction:column;line-height:1.15;cursor:pointer}
+  .brand .name{font-weight:700;font-size:17px;letter-spacing:-.01em;display:flex;align-items:center;gap:7px}
+  .brand .dot{width:8px;height:8px;border-radius:50%;background:var(--accent)}
+  .brand .tag{font-size:11px;color:var(--ink-faint);letter-spacing:.02em}
+  .spacer{flex:1}
+  .queue-btn{
+    display:flex;align-items:center;gap:7px;background:var(--surface);
+    border:1px solid var(--line);padding:8px 12px;border-radius:999px;
+    font-size:13px;font-weight:500;color:var(--ink-soft);box-shadow:var(--shadow);
+    transition:.15s;
+  }
+  .queue-btn:hover{border-color:var(--study);color:var(--study)}
+  .queue-btn .n{
+    background:var(--study-soft);color:var(--study);font-weight:700;
+    padding:1px 8px;border-radius:999px;font-size:12px;font-family:"IBM Plex Mono",monospace;
+  }
+  .queue-btn.empty .n{background:var(--line-soft);color:var(--ink-faint)}
+
+  /* ---- layout ---- */
+  main{max-width:840px;margin:0 auto;padding:24px 20px}
+  .eyebrow{font-size:11px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--accent);margin-bottom:6px}
+  h1.page{font-size:23px;font-weight:700;letter-spacing:-.02em;margin-bottom:2px}
+  .sub{color:var(--ink-soft);font-size:14px}
+
+  /* ---- buttons ---- */
+  .btn{
+    display:inline-flex;align-items:center;justify-content:center;gap:7px;
+    padding:11px 18px;border-radius:11px;font-size:14px;font-weight:600;transition:.15s;
+  }
+  .btn-primary{background:var(--accent);color:#fff}
+  .btn-primary:hover{background:var(--accent-deep)}
+  .btn-ghost{background:var(--surface);border:1px solid var(--line);color:var(--ink-soft)}
+  .btn-ghost:hover{border-color:var(--accent);color:var(--accent)}
+  .btn-sm{padding:7px 12px;font-size:13px;border-radius:9px}
+  .btn-block{width:100%}
+  .btn-danger{color:var(--danger)}
+  .btn-danger:hover{background:#FBEDED;border-color:var(--danger)}
+
+  /* ---- case list ---- */
+  .toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:20px 0 16px}
+  .filters{display:flex;gap:6px}
+  .chip{padding:6px 13px;border-radius:999px;font-size:13px;font-weight:500;background:var(--surface);border:1px solid var(--line);color:var(--ink-soft)}
+  .chip.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+  .case-grid{display:flex;flex-direction:column;gap:12px}
+  .case-card{
+    background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);
+    padding:16px 18px;box-shadow:var(--shadow);transition:.15s;cursor:pointer;
+    display:flex;align-items:center;gap:14px;
+  }
+  .case-card:hover{border-color:var(--accent);transform:translateY(-1px)}
+  .status-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0}
+  .status-dot.active{background:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+  .status-dot.discharged{background:var(--ink-faint)}
+  .case-main{flex:1;min-width:0}
+  .case-label{font-weight:600;font-size:15px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .case-cc{color:var(--ink-soft);font-size:13px;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .case-meta{display:flex;gap:14px;align-items:center;flex-shrink:0}
+  .metric{text-align:center}
+  .metric .v{font-family:"IBM Plex Mono",monospace;font-weight:500;font-size:16px;line-height:1}
+  .metric .l{font-size:10px;color:var(--ink-faint);margin-top:3px}
+  .metric.study .v{color:var(--study)}
+
+  .empty-state{text-align:center;padding:56px 20px;color:var(--ink-faint)}
+  .empty-state .big{font-size:15px;color:var(--ink-soft);margin-bottom:6px;font-weight:500}
+
+  /* ---- phase rail (signature) ---- */
+  .rail{display:flex;align-items:center;margin:18px 0 26px;user-select:none}
+  .rail .node{display:flex;flex-direction:column;align-items:center;gap:6px;position:relative;z-index:2}
+  .rail .circ{width:30px;height:30px;border-radius:50%;background:var(--surface);border:2px solid var(--line);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:var(--ink-faint);transition:.2s}
+  .rail .node.done .circ{background:var(--accent);border-color:var(--accent);color:#fff}
+  .rail .node.current .circ{border-color:var(--accent);color:var(--accent);box-shadow:0 0 0 4px var(--accent-soft)}
+  .rail .lbl{font-size:11px;font-weight:600;color:var(--ink-faint)}
+  .rail .node.done .lbl,.rail .node.current .lbl{color:var(--accent)}
+  .rail .seg{flex:1;height:2px;background:var(--line);margin:0 -2px;margin-bottom:22px}
+  .rail .seg.done{background:var(--accent)}
+
+  /* ---- section card ---- */
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);margin-bottom:16px;overflow:hidden}
+  .card-head{padding:15px 18px;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--line-soft)}
+  .card-head h2{font-size:14px;font-weight:700;letter-spacing:.01em}
+  .card-head .count{font-size:12px;color:var(--ink-faint);font-family:"IBM Plex Mono",monospace}
+  .card-body{padding:6px 18px 16px}
+
+  /* case header block */
+  .case-hd{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:18px;margin-bottom:6px}
+  .case-hd .top{display:flex;align-items:flex-start;gap:12px}
+  .case-hd .label-big{font-size:20px;font-weight:700;letter-spacing:-.01em;flex:1}
+  .badge{font-size:11px;font-weight:600;padding:3px 10px;border-radius:999px}
+  .badge.active{background:var(--accent-soft);color:var(--accent-deep)}
+  .badge.discharged{background:var(--line-soft);color:var(--ink-soft)}
+  .case-hd .cc-line{color:var(--ink-soft);font-size:14px;margin-top:4px}
+
+  /* problems */
+  .prob{border:1px solid var(--line);border-radius:12px;margin:12px 0;overflow:hidden;transition:.15s}
+  .prob.study-on{border-color:var(--study)}
+  .prob.resolved{opacity:.62}
+  .prob-hd{display:flex;align-items:center;gap:10px;padding:12px 14px;background:var(--line-soft)}
+  .prob.study-on .prob-hd{background:var(--study-soft)}
+  .prob-num{font-family:"IBM Plex Mono",monospace;font-weight:600;font-size:13px;color:var(--accent);flex-shrink:0}
+  .prob-title-in{flex:1;font-weight:600;font-size:15px;background:transparent;border:none;outline:none;min-width:0}
+  .prob-title-in::placeholder{color:var(--ink-faint);font-weight:500}
+  .prob-body{padding:12px 14px;display:flex;flex-direction:column;gap:10px}
+  .field label{display:block;font-size:11px;font-weight:600;letter-spacing:.04em;color:var(--ink-soft);margin-bottom:4px;text-transform:uppercase}
+  .field textarea,.field input{width:100%;border:1px solid var(--line);border-radius:9px;padding:9px 11px;background:#FCFDFE;transition:.15s;line-height:1.55}
+  .field textarea:focus,.field input:focus{outline:none;border-color:var(--accent);background:#fff;box-shadow:0 0 0 3px var(--accent-soft)}
+  .ap-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .prob-foot{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:2px 14px 12px}
+  .study-toggle{display:inline-flex;align-items:center;gap:7px;font-size:13px;font-weight:500;color:var(--ink-soft);padding:6px 11px;border-radius:9px;border:1px solid var(--line);transition:.15s}
+  .study-toggle.on{background:var(--study-soft);border-color:var(--study);color:var(--study)}
+  .study-toggle .box{width:15px;height:15px;border-radius:4px;border:2px solid currentColor;display:flex;align-items:center;justify-content:center;font-size:10px}
+  .link-btn{font-size:12px;color:var(--ink-faint);padding:6px 8px;border-radius:7px}
+  .link-btn:hover{color:var(--accent)}
+  .link-btn.del:hover{color:var(--danger)}
+
+  /* routine checklist */
+  .routine{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .rt-item{display:flex;align-items:flex-start;gap:10px;padding:9px 11px;border:1px solid var(--line);border-radius:10px;background:#FCFDFE;transition:.15s}
+  .rt-item.checked{background:var(--accent-soft);border-color:var(--accent)}
+  .rt-box{width:18px;height:18px;border-radius:5px;border:2px solid var(--ink-faint);flex-shrink:0;margin-top:1px;display:flex;align-items:center;justify-content:center;font-size:11px;color:#fff;transition:.15s}
+  .rt-item.checked .rt-box{background:var(--accent);border-color:var(--accent)}
+  .rt-item .rt-text{font-size:13px;font-weight:500;line-height:1.35}
+  .rt-item .rt-hint{font-size:11px;color:var(--ink-faint);margin-top:1px}
+
+  /* daily log */
+  .log-entry{border-left:2px solid var(--line);padding:2px 0 14px 16px;position:relative;margin-left:6px}
+  .log-entry::before{content:"";position:absolute;left:-5px;top:4px;width:8px;height:8px;border-radius:50%;background:var(--accent)}
+  .log-date{font-family:"IBM Plex Mono",monospace;font-size:12px;font-weight:500;color:var(--accent-deep)}
+  .log-line{font-size:14px;margin-top:3px}
+  .log-line .k{font-weight:600;color:var(--ink-soft);font-size:12px;margin-right:6px}
+
+  /* study queue */
+  .sq-group{margin-bottom:20px}
+  .sq-case{font-size:12px;font-weight:600;color:var(--ink-faint);margin-bottom:8px;letter-spacing:.02em}
+  .sq-item{background:var(--surface);border:1px solid var(--study);border-left-width:3px;border-radius:10px;padding:12px 14px;margin-bottom:8px;box-shadow:var(--shadow)}
+  .sq-item .t{font-weight:600;font-size:14px}
+  .sq-item .n{font-size:13px;color:var(--ink-soft);margin-top:3px}
+  .sq-item .go{font-size:12px;color:var(--accent);font-weight:600;margin-top:6px;display:inline-block}
+
+  /* reflection */
+  .reflect .field{margin-bottom:12px}
+
+  /* modal */
+  .modal-bg{position:fixed;inset:0;background:rgba(22,36,46,.4);backdrop-filter:blur(2px);z-index:50;display:flex;align-items:flex-end;justify-content:center;padding:0}
+  @media(min-width:600px){.modal-bg{align-items:center;padding:20px}}
+  .modal{background:var(--surface);width:100%;max-width:480px;border-radius:18px 18px 0 0;padding:22px;box-shadow:0 -8px 40px rgba(0,0,0,.14);max-height:92vh;overflow:auto}
+  @media(min-width:600px){.modal{border-radius:18px}}
+  .modal h3{font-size:17px;font-weight:700;margin-bottom:4px}
+  .modal .mh-sub{font-size:13px;color:var(--ink-soft);margin-bottom:16px}
+  .modal .field{margin-bottom:12px}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .modal-actions{display:flex;gap:10px;margin-top:18px}
+
+  /* privacy note */
+  .privacy{display:flex;gap:8px;align-items:center;background:var(--study-soft);color:var(--study);border-radius:10px;padding:9px 13px;font-size:12px;font-weight:500;margin-bottom:16px}
+  .privacy svg{flex-shrink:0}
+
+  .section-actions{display:flex;gap:10px;margin:6px 0 26px;flex-wrap:wrap}
+  .back{display:inline-flex;align-items:center;gap:6px;color:var(--ink-soft);font-size:13px;font-weight:500;margin-bottom:14px}
+  .back:hover{color:var(--accent)}
+
+  .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--ink);color:#fff;padding:11px 20px;border-radius:11px;font-size:14px;font-weight:500;box-shadow:0 8px 30px rgba(0,0,0,.2);opacity:0;transition:.25s;z-index:80;pointer-events:none}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+  .add-inline{display:flex;gap:8px;margin-top:8px}
+  .add-inline input{flex:1}
+  .save-note{font-size:11px;color:var(--ink-faint);text-align:center;margin-top:24px}
+
+  @media(max-width:520px){
+    .ap-grid,.routine,.row2{grid-template-columns:1fr}
+    .case-meta{gap:10px}
+    main{padding:18px 15px}
+    .topbar-in{padding:12px 15px}
+  }
+</style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="topbar-in">
+      <div class="brand" onclick="go('list')">
+        <span class="name"><span class="dot"></span>Casebook</span>
+        <span class="tag">入院管理を学びに変える</span>
+      </div>
+      <div class="spacer"></div>
+      <button class="queue-btn" id="queueBtn" onclick="go('queue')">
+        学習キュー <span class="n" id="queueN">0</span>
+      </button>
+    </div>
+  </div>
+
+  <main id="app"></main>
+
+  <div id="modalMount"></div>
+  <div class="toast" id="toast"></div>
+
+<script>
+/* ============ storage adapter (window.storage in Claude, in-memory fallback) ============ */
+const KEY = "casebook:v1";
+const Store = {
+  mem:null,
+  async load(){
+    try{
+      const r = await window.storage.get(KEY);
+      return r && r.value ? JSON.parse(r.value) : {cases:[]};
+    }catch(e){
+      return this.mem || {cases:[]};
+    }
+  },
+  async save(data){
+    this.mem = data;
+    try{ await window.storage.set(KEY, JSON.stringify(data)); return true; }
+    catch(e){ return false; }
+  }
+};
+
+let DB = {cases:[]};
+let VIEW = {name:"list", caseId:null, filter:"active"};
+let SAVE_OK = true;
+
+const uid = () => Math.random().toString(36).slice(2,9);
+const todayISO = () => new Date().toISOString().slice(0,10);
+const esc = s => (s||"").replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+
+const ROUTINE = [
+  {k:"vte", t:"VTE予防", h:"リスク評価・要否"},
+  {k:"delirium", t:"せん妄リスク", h:"予防・環境調整"},
+  {k:"nutrition", t:"栄養評価", h:"経口/補液/嚥下"},
+  {k:"pain", t:"疼痛管理", h:"評価と方針"},
+  {k:"devices", t:"ライン・尿カテ", h:"必要性の再確認"},
+  {k:"meds", t:"常用薬", h:"継続/休薬の確認"},
+  {k:"allergy", t:"アレルギー", h:"薬剤・食物"},
+  {k:"disposition", t:"退院先の見込み", h:"Day1から考える"},
+  {k:"rehab", t:"リハ・ADL", h:"廃用予防"},
+  {k:"code", t:"急変時方針", h:"ACP / コード"},
+];
+
+/* ============ persistence helpers ============ */
+let saveTimer=null;
+function persist(){
+  render();
+  clearTimeout(saveTimer);
+  saveTimer=setTimeout(async ()=>{
+    SAVE_OK = await Store.save(DB);
+    renderSaveNote();
+  },300);
+}
+function findCase(id){ return DB.cases.find(c=>c.id===id); }
+
+/* ============ actions ============ */
+function go(name, caseId){ VIEW={...VIEW, name, caseId:caseId??VIEW.caseId}; window.scrollTo(0,0); render(); }
+function setFilter(f){ VIEW.filter=f; render(); }
+
+function createCase(ageBand, sex, cc){
+  const c={
+    id:uid(), createdAt:Date.now(), status:"active",
+    ageBand, sex, cc,
+    admittedAt: todayISO(), dischargedAt:null,
+    problems:[], routine:{}, dailyLog:[],
+    reflection:{learned:"", differently:"", topics:""}
+  };
+  DB.cases.unshift(c);
+  closeModal();
+  VIEW={name:"case", caseId:c.id, filter:VIEW.filter};
+  persist();
+}
+function labelOf(c){
+  const s = c.sex==="M"?"M":c.sex==="F"?"F":"";
+  return (c.ageBand||"") + s;
+}
+
+function addProblem(cid){
+  const c=findCase(cid); if(!c)return;
+  c.problems.push({id:uid(), title:"", assessment:"", plan:"", dischargeCriteria:"", needsStudy:false, studyNote:"", active:true});
+  persist();
+}
+function updateProblem(cid,pid,field,val){
+  const c=findCase(cid); const p=c.problems.find(x=>x.id===pid); if(!p)return;
+  p[field]=val;
+  if(field==="needsStudy"||field==="active"){ persist(); }
+  else { // text: save silently without full re-render churn
+    clearTimeout(saveTimer);
+    saveTimer=setTimeout(async()=>{SAVE_OK=await Store.save(DB);renderSaveNote();},400);
+    updateQueueBadge();
+  }
+}
+function delProblem(cid,pid){
+  const c=findCase(cid); c.problems=c.problems.filter(x=>x.id!==pid); persist();
+}
+function toggleRoutine(cid,k){
+  const c=findCase(cid); c.routine[k]=!c.routine[k]; persist();
+}
+function addLog(cid){
+  const c=findCase(cid);
+  const d=document.getElementById("logDate").value||todayISO();
+  const check=document.getElementById("logCheck").value.trim();
+  const a=document.getElementById("logA").value.trim();
+  const p=document.getElementById("logP").value.trim();
+  if(!check&&!a&&!p){ toast("内容を入力してください"); return; }
+  c.dailyLog.unshift({id:uid(), date:d, check, a, p});
+  persist();
+}
+function delLog(cid,lid){
+  const c=findCase(cid); c.dailyLog=c.dailyLog.filter(x=>x.id!==lid); persist();
+}
+function updateReflection(cid,field,val){
+  const c=findCase(cid); c.reflection[field]=val;
+  clearTimeout(saveTimer);
+  saveTimer=setTimeout(async()=>{SAVE_OK=await Store.save(DB);renderSaveNote();},400);
+}
+function discharge(cid){
+  const c=findCase(cid);
+  c.status = c.status==="active" ? "discharged" : "active";
+  c.dischargedAt = c.status==="discharged" ? todayISO() : null;
+  persist();
+}
+function deleteCase(cid){
+  if(!confirm("このケースを削除しますか？（元に戻せません）"))return;
+  DB.cases=DB.cases.filter(c=>c.id!==cid);
+  closeModal(); go("list"); persist();
+}
+
+/* ============ study queue ============ */
+function studyItems(){
+  const out=[];
+  DB.cases.forEach(c=>{
+    c.problems.forEach(p=>{
+      if(p.needsStudy) out.push({caseId:c.id, caseLabel:labelOf(c)+" "+(c.cc||""), title:p.title||"(無題の問題)", note:p.studyNote});
+    });
+  });
+  return out;
+}
+function updateQueueBadge(){
+  const n=studyItems().length;
+  const el=document.getElementById("queueN"); if(el)el.textContent=n;
+  const b=document.getElementById("queueBtn"); if(b)b.classList.toggle("empty",n===0);
+}
+
+/* ============ Obsidian export ============ */
+function toObsidian(c){
+  const L=[];
+  const label = labelOf(c)+" "+(c.cc||"");
+  L.push("---");
+  L.push("type: case");
+  L.push("admitted: "+(c.admittedAt||""));
+  if(c.dischargedAt) L.push("discharged: "+c.dischargedAt);
+  L.push("status: "+c.status);
+  L.push("tags: [case, 総診, 病棟]");
+  L.push("---");
+  L.push("");
+  L.push("# "+label.trim());
+  L.push("");
+  L.push("> [!abstract] サマリー");
+  L.push("> "+ (c.ageBand||"") + (c.sex==="M"?" 男性":c.sex==="F"?" 女性":"") + " / 主訴: "+(c.cc||"—"));
+  L.push("");
+  L.push("## Problem List");
+  const acts=c.problems.filter(p=>p.title);
+  if(acts.length){
+    L.push("```mermaid");
+    L.push("flowchart TD");
+    L.push('  P["'+label.trim()+'"]');
+    acts.forEach((p,i)=>{ L.push('  P --> P'+i+'["'+p.title.replace(/"/g,"")+'"]'); });
+    L.push("```");
+    L.push("");
+    acts.forEach((p,i)=>{
+      L.push("### #"+(i+1)+" [["+p.title+"]]"+(p.active?"":" ✓resolved"));
+      if(p.assessment) L.push("- **A:** "+p.assessment.replace(/\n/g," "));
+      if(p.plan) L.push("- **P:** "+p.plan.replace(/\n/g," "));
+      if(p.dischargeCriteria) L.push("- **退院基準:** "+p.dischargeCriteria.replace(/\n/g," "));
+      L.push("");
+    });
+  } else { L.push("- (未入力)"); L.push(""); }
+
+  const rts=ROUTINE.filter(r=>c.routine[r.k]);
+  if(rts.length){
+    L.push("## 入院時ルーチン");
+    rts.forEach(r=>L.push("- [x] "+r.t));
+    L.push("");
+  }
+
+  if(c.dailyLog.length){
+    L.push("## 経過");
+    [...c.dailyLog].sort((a,b)=>a.date.localeCompare(b.date)).forEach(e=>{
+      const parts=[];
+      if(e.check)parts.push("確認: "+e.check);
+      if(e.a)parts.push("A: "+e.a);
+      if(e.p)parts.push("P: "+e.p);
+      L.push("- **"+e.date+"** — "+parts.join(" / ").replace(/\n/g," "));
+    });
+    L.push("");
+  }
+
+  const study=c.problems.filter(p=>p.needsStudy);
+  if(study.length){
+    L.push("> [!question] 学習ポイント");
+    study.forEach(p=>{
+      L.push("> - [["+(p.title||"?")+"]]"+(p.studyNote?" — "+p.studyNote.replace(/\n/g," "):""));
+    });
+    L.push("");
+  }
+
+  const r=c.reflection;
+  if(r.learned||r.differently||r.topics){
+    L.push("> [!note] 振り返り");
+    if(r.learned) L.push("> **学んだこと:** "+r.learned.replace(/\n/g," "));
+    if(r.differently) L.push("> **次はこうする:** "+r.differently.replace(/\n/g," "));
+    if(r.topics){
+      const t=r.topics.split(/[,、\n]/).map(x=>x.trim()).filter(Boolean).map(x=>"[["+x+"]]").join(" ");
+      L.push("> **復習:** "+t);
+    }
+  }
+  return L.join("\n");
+}
+function copyObsidian(cid){
+  const c=findCase(cid);
+  const md=toObsidian(c);
+  navigator.clipboard.writeText(md).then(
+    ()=>toast("Obsidian用マークダウンをコピーしました"),
+    ()=>{ showModal(`<h3>Obsidian書き出し</h3><p class="mh-sub">下のテキストを選択してコピーしてください。</p><textarea style="width:100%;height:300px;border:1px solid var(--line);border-radius:9px;padding:10px" class="mono">${esc(md)}</textarea><div class="modal-actions"><button class="btn btn-ghost btn-block" onclick="closeModal()">閉じる</button></div>`); }
+  );
+}
+
+/* ============ modals ============ */
+function showModal(html){ document.getElementById("modalMount").innerHTML=`<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal">${html}</div></div>`; }
+function closeModal(){ document.getElementById("modalMount").innerHTML=""; }
+function newCaseModal(){
+  showModal(`
+    <h3>新規入院</h3>
+    <p class="mh-sub">匿名ラベルのみ。氏名・ID・生年月日は入力しないでください。</p>
+    <div class="row2">
+      <div class="field"><label>年代</label>
+        <select id="ncAge" style="width:100%;border:1px solid var(--line);border-radius:9px;padding:9px 11px;background:#FCFDFE">
+          <option value="">—</option>
+          ${["10代","20代","30代","40代","50代","60代","70代","80代","90代以上"].map(a=>`<option>${a}</option>`).join("")}
+        </select>
+      </div>
+      <div class="field"><label>性別</label>
+        <select id="ncSex" style="width:100%;border:1px solid var(--line);border-radius:9px;padding:9px 11px;background:#FCFDFE">
+          <option value="">—</option><option value="M">男性</option><option value="F">女性</option>
+        </select>
+      </div>
+    </div>
+    <div class="field"><label>主訴 / 入院理由</label>
+      <input id="ncCC" placeholder="例: 発熱・呼吸困難" autofocus>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal()">キャンセル</button>
+      <button class="btn btn-primary btn-block" onclick="createCase(ncAge.value, ncSex.value, ncCC.value.trim())">入院を作成</button>
+    </div>
+  `);
+  setTimeout(()=>document.getElementById("ncCC")?.focus(),50);
+}
+
+/* ============ toast ============ */
+let toastTimer=null;
+function toast(msg){
+  const t=document.getElementById("toast"); t.textContent=msg; t.classList.add("show");
+  clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.classList.remove("show"),2200);
+}
+
+/* ============ render ============ */
+function render(){
+  updateQueueBadge();
+  const app=document.getElementById("app");
+  if(VIEW.name==="list") app.innerHTML=renderList();
+  else if(VIEW.name==="case") app.innerHTML=renderCase();
+  else if(VIEW.name==="queue") app.innerHTML=renderQueue();
+  renderSaveNote();
+}
+function renderSaveNote(){
+  const el=document.getElementById("saveNote");
+  if(el) el.textContent = SAVE_OK ? "変更は自動保存されます" : "※このセッションのみ保存（永続化は利用不可）";
+}
+
+function renderList(){
+  const cases=DB.cases.filter(c=> VIEW.filter==="all" ? true : c.status===VIEW.filter);
+  let body;
+  if(!DB.cases.length){
+    body=`<div class="empty-state"><div class="big">まだケースがありません</div><div>入院を1件つくって、問題リストから始めましょう。</div></div>`;
+  } else if(!cases.length){
+    body=`<div class="empty-state"><div class="big">該当するケースがありません</div></div>`;
+  } else {
+    body=`<div class="case-grid">${cases.map(c=>{
+      const study=c.problems.filter(p=>p.needsStudy).length;
+      const act=c.problems.filter(p=>p.active).length;
+      return `<div class="case-card" onclick="go('case','${c.id}')">
+        <span class="status-dot ${c.status}"></span>
+        <div class="case-main">
+          <div class="case-label">${esc(labelOf(c))||'<span style="color:var(--ink-faint)">—</span>'}
+            ${c.status==="discharged"?'<span class="badge discharged">退院</span>':''}
+          </div>
+          <div class="case-cc">${esc(c.cc)||"主訴未入力"}</div>
+        </div>
+        <div class="case-meta">
+          <div class="metric"><div class="v">${act}</div><div class="l">問題</div></div>
+          ${study?`<div class="metric study"><div class="v">${study}</div><div class="l">要学習</div></div>`:''}
+        </div>
+      </div>`;
+    }).join("")}</div>`;
+  }
+  return `
+    <div class="eyebrow">Ward</div>
+    <h1 class="page">担当ケース</h1>
+    <div class="sub">入院から退院・振り返りまでを一本の流れで管理します。</div>
+    <div class="toolbar">
+      <div class="filters">
+        <button class="chip ${VIEW.filter==='active'?'on':''}" onclick="setFilter('active')">入院中</button>
+        <button class="chip ${VIEW.filter==='discharged'?'on':''}" onclick="setFilter('discharged')">退院</button>
+        <button class="chip ${VIEW.filter==='all'?'on':''}" onclick="setFilter('all')">すべて</button>
+      </div>
+      <button class="btn btn-primary btn-sm" onclick="newCaseModal()">＋ 新規入院</button>
+    </div>
+    ${body}
+    <div class="save-note" id="saveNote"></div>
+  `;
+}
+
+function renderCase(){
+  const c=findCase(VIEW.caseId);
+  if(!c){ VIEW.name="list"; return renderList(); }
+  const phase = c.status==="discharged" ? 3 : (c.dailyLog.length ? 2 : 1);
+
+  const railHTML=`<div class="rail">
+    ${["入院","管理","退院・振り返り"].map((lbl,i)=>{
+      const n=i+1; const cls = n<phase?"done": n===phase?"current":"";
+      return `<div class="node ${cls}"><div class="circ">${n<phase?"✓":n}</div><div class="lbl">${lbl}</div></div>`
+        + (i<2?`<div class="seg ${n<phase?"done":""}"></div>`:"");
+    }).join("")}
+  </div>`;
+
+  const problemsHTML = c.problems.map((p,i)=>`
+    <div class="prob ${p.needsStudy?'study-on':''} ${!p.active?'resolved':''}">
+      <div class="prob-hd">
+        <span class="prob-num">#${i+1}</span>
+        <input class="prob-title-in" placeholder="問題名（例: 市中肺炎）" value="${esc(p.title)}"
+          oninput="updateProblem('${c.id}','${p.id}','title',this.value)">
+        <button class="link-btn" title="${p.active?'解決にする':'再アクティブ'}" onclick="updateProblem('${c.id}','${p.id}','active',${!p.active})">${p.active?'✓解決':'↩戻す'}</button>
+      </div>
+      <div class="prob-body">
+        <div class="ap-grid">
+          <div class="field"><label>Assessment</label>
+            <textarea rows="2" oninput="updateProblem('${c.id}','${p.id}','assessment',this.value)" placeholder="評価・鑑別">${esc(p.assessment)}</textarea></div>
+          <div class="field"><label>Plan</label>
+            <textarea rows="2" oninput="updateProblem('${c.id}','${p.id}','plan',this.value)" placeholder="方針・オーダー">${esc(p.plan)}</textarea></div>
+        </div>
+        <div class="field"><label>退院基準（Day1から考える）</label>
+          <input oninput="updateProblem('${c.id}','${p.id}','dischargeCriteria',this.value)" placeholder="例: 解熱・経口摂取可・CRP低下傾向" value="${esc(p.dischargeCriteria)}"></div>
+        ${p.needsStudy?`<div class="field"><label>要学習メモ</label>
+          <input oninput="updateProblem('${c.id}','${p.id}','studyNote',this.value)" placeholder="何を調べる？（vaultのトピック名でもOK）" value="${esc(p.studyNote)}"></div>`:''}
+      </div>
+      <div class="prob-foot">
+        <button class="study-toggle ${p.needsStudy?'on':''}" onclick="updateProblem('${c.id}','${p.id}','needsStudy',${!p.needsStudy})">
+          <span class="box">${p.needsStudy?'★':''}</span>要学習</button>
+        <div class="spacer" style="flex:1"></div>
+        <button class="link-btn del" onclick="delProblem('${c.id}','${p.id}')">削除</button>
+      </div>
+    </div>
+  `).join("");
+
+  const routineHTML=ROUTINE.map(r=>`
+    <div class="rt-item ${c.routine[r.k]?'checked':''}" onclick="toggleRoutine('${c.id}','${r.k}')">
+      <div class="rt-box">${c.routine[r.k]?'✓':''}</div>
+      <div><div class="rt-text">${r.t}</div><div class="rt-hint">${r.h}</div></div>
+    </div>`).join("");
+
+  const logHTML = c.dailyLog.length ? c.dailyLog.map(e=>`
+    <div class="log-entry">
+      <div style="display:flex;align-items:center;gap:10px">
+        <span class="log-date">${e.date}</span>
+        <button class="link-btn del" style="margin-left:auto" onclick="delLog('${c.id}','${e.id}')">×</button>
+      </div>
+      ${e.check?`<div class="log-line"><span class="k">確認</span>${esc(e.check)}</div>`:''}
+      ${e.a?`<div class="log-line"><span class="k">A</span>${esc(e.a)}</div>`:''}
+      ${e.p?`<div class="log-line"><span class="k">P</span>${esc(e.p)}</div>`:''}
+    </div>`).join("") : `<div style="color:var(--ink-faint);font-size:13px;padding:4px 0">まだ記録がありません。</div>`;
+
+  const reflectHTML = c.status==="discharged" ? `
+    <div class="card reflect">
+      <div class="card-head"><h2>振り返り</h2><span class="count">learning</span></div>
+      <div class="card-body">
+        <div class="field"><label>学んだこと</label>
+          <textarea rows="2" oninput="updateReflection('${c.id}','learned',this.value)" placeholder="この症例で得た知見">${esc(c.reflection.learned)}</textarea></div>
+        <div class="field"><label>次はこうする</label>
+          <textarea rows="2" oninput="updateReflection('${c.id}','differently',this.value)" placeholder="改善点・反省">${esc(c.reflection.differently)}</textarea></div>
+        <div class="field"><label>復習トピック（カンマ区切り → wikilink化）</label>
+          <input oninput="updateReflection('${c.id}','topics',this.value)" placeholder="例: 市中肺炎, CURB-65, レジオネラ" value="${esc(c.reflection.topics)}"></div>
+      </div>
+    </div>` : "";
+
+  return `
+    <button class="back" onclick="go('list')">← ケース一覧</button>
+    <div class="case-hd">
+      <div class="top">
+        <div class="label-big">${esc(labelOf(c))||"—"} ${c.cc?`<span style="font-weight:400;color:var(--ink-soft);font-size:15px">${esc(c.cc)}</span>`:''}</div>
+        <span class="badge ${c.status}">${c.status==="active"?"入院中":"退院"}</span>
+      </div>
+      <div class="cc-line mono" style="font-size:12px;color:var(--ink-faint)">入院 ${c.admittedAt}${c.dischargedAt?" → 退院 "+c.dischargedAt:""}</div>
+    </div>
+    ${railHTML}
+
+    <div class="privacy">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+      個人が特定できる情報は入力しないでください（年代・性別・主訴のみ）
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h2>Problem List</h2><span class="count">${c.problems.length} 問題</span></div>
+      <div class="card-body">
+        ${problemsHTML||'<div style="color:var(--ink-faint);font-size:13px;padding:4px 0">問題を追加して、A/P と退院基準を組み立てましょう。</div>'}
+        <button class="btn btn-ghost btn-sm btn-block" style="margin-top:10px" onclick="addProblem('${c.id}')">＋ 問題を追加</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h2>入院時ルーチン</h2><span class="count">${ROUTINE.filter(r=>c.routine[r.k]).length}/${ROUTINE.length}</span></div>
+      <div class="card-body"><div class="routine">${routineHTML}</div></div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h2>日々の経過</h2><span class="count">${c.dailyLog.length} 件</span></div>
+      <div class="card-body">
+        <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+          <input id="logDate" type="date" value="${todayISO()}" style="border:1px solid var(--line);border-radius:9px;padding:8px 10px;background:#FCFDFE">
+        </div>
+        <div class="field" style="margin-bottom:8px"><label>今日確認すること</label><input id="logCheck" placeholder="例: 酸素化・培養結果・食事量"></div>
+        <div class="ap-grid" style="margin-bottom:8px">
+          <div class="field"><label>A</label><textarea id="logA" rows="2" placeholder="評価"></textarea></div>
+          <div class="field"><label>P</label><textarea id="logP" rows="2" placeholder="方針"></textarea></div>
+        </div>
+        <button class="btn btn-ghost btn-sm btn-block" onclick="addLog('${c.id}')">記録を追加</button>
+        <div style="margin-top:16px">${logHTML}</div>
+      </div>
+    </div>
+
+    ${reflectHTML}
+
+    <div class="section-actions">
+      <button class="btn ${c.status==='active'?'btn-primary':'btn-ghost'}" onclick="discharge('${c.id}')">
+        ${c.status==="active"?"退院にして振り返る":"入院中に戻す"}
+      </button>
+      <button class="btn btn-ghost" onclick="copyObsidian('${c.id}')">Obsidianに書き出す</button>
+      <button class="btn btn-ghost btn-danger" onclick="deleteCase('${c.id}')">削除</button>
+    </div>
+    <div class="save-note" id="saveNote"></div>
+  `;
+}
+
+function renderQueue(){
+  const items=studyItems();
+  const groups={};
+  items.forEach(it=>{ (groups[it.caseLabel]=groups[it.caseLabel]||[]).push(it); });
+  let body;
+  if(!items.length){
+    body=`<div class="empty-state"><div class="big">学習キューは空です</div><div>問題カードの「要学習」を押すと、ここに調べるべきことが集まります。</div></div>`;
+  } else {
+    body=Object.entries(groups).map(([label,its])=>`
+      <div class="sq-group">
+        <div class="sq-case">${esc(label)}</div>
+        ${its.map(it=>`
+          <div class="sq-item" onclick="go('case','${it.caseId}')">
+            <div class="t">${esc(it.title)}</div>
+            ${it.note?`<div class="n">${esc(it.note)}</div>`:''}
+            <span class="go">ケースを開く →</span>
+          </div>`).join("")}
+      </div>`).join("");
+  }
+  return `
+    <button class="back" onclick="go('list')">← ケース一覧</button>
+    <div class="eyebrow">Learning</div>
+    <h1 class="page">学習キュー</h1>
+    <div class="sub">担当した症例から「調べるべきこと」が自動で集まります。ここが日々の勉強リストです。</div>
+    <div style="margin-top:22px">${body}</div>
+  `;
+}
+
+/* ============ boot ============ */
+(async function(){
+  DB = await Store.load();
+  if(!DB.cases) DB.cases=[];
+  // detect storage availability
+  SAVE_OK = await Store.save(DB);
+  render();
+})();
+</script>
+</body>
+</html>
