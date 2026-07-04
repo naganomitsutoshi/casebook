@@ -1,10 +1,10 @@
 ﻿<!DOCTYPE html>
-<!-- Casebook v2.2: local-only inpatient tracker with template-aligned admission checklist and I-PASS handoff -->
+<!-- Casebook v3: local-only inpatient tracker. v3 removes the daily collect panel; template-aligned admission checklist and I-PASS handoff retained. Implemented directly by Claude (Fable 5), no Codex. -->
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Casebook v2</title>
+<title>Casebook</title>
 <style>
   :root{
     --paper:#f4f6f4;
@@ -176,17 +176,7 @@
   .tabs{display:flex;gap:8px;flex-wrap:wrap}
   .tab-btn.on{background:var(--ink);color:#fff;border-color:var(--ink)}
 
-  .collect-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin-bottom:12px}
-  .collect-btn{
-    min-height:84px;border-radius:18px;border:1px solid var(--line);
-    background:var(--surface-2);padding:10px;display:flex;flex-direction:column;align-items:flex-start;
-    justify-content:space-between;text-align:left
-  }
-  .collect-btn.on-ok{background:var(--done-soft);border-color:#bed7c1}
-  .collect-btn.on-warn{background:var(--warn-soft);border-color:#ebcf96}
-  .collect-btn strong{font-size:16px}
-  .collect-mark{font-size:28px;font-weight:800;line-height:1}
-  .collect-note textarea,.input,.textarea,.select{
+  .input,.textarea,.select{
     width:100%;border:1px solid var(--line);border-radius:14px;background:#fcfdfa;
     padding:12px 13px;color:var(--ink)
   }
@@ -332,7 +322,7 @@
     main{padding:18px 14px}
     .topbar-in{padding:12px 14px}
     h1.page{font-size:24px}
-    .collect-grid,.mini-grid,.routine-grid,.modal-grid,.photo-grid{grid-template-columns:1fr}
+    .mini-grid,.routine-grid,.modal-grid,.photo-grid{grid-template-columns:1fr}
     .metrics{grid-template-columns:1fr 1fr}
   }
 </style>
@@ -364,10 +354,7 @@
 
 <script id="logic">
 function logicFactory(){
-  const COLLECT_KEYS = ["fever","meal","bowel","sleep","pain"];
   const SEVERITY_LABELS = { stable:"安定", watcher:"要注意", unstable:"不安定" };
-  const COLLECT_LABELS = { fever:"熱", meal:"食", bowel:"便", sleep:"眠", pain:"痛" };
-  const COLLECT_MARKS = { "":"-","ok":"✓","warn":"⚠" };
   const MED_ROUTE_LABELS = { oral:"内服", inj:"注射" };
   const EVENT_TYPE_LABELS = { test:"検査", surgery:"手術", procedure:"処置", treatment:"治療", other:"その他" };
   const ROUTINE = [
@@ -391,12 +378,8 @@ function logicFactory(){
     return new Date().toISOString();
   }
 
-  function makeEmptyCollect(){
-    return { fever:"", meal:"", bowel:"", sleep:"", pain:"", note:"" };
-  }
-
   function makeEmptyDay(date){
-    return { date, collect:makeEmptyCollect(), todos:[], waits:[], hooks:[] };
+    return { date, todos:[], waits:[], hooks:[] };
   }
 
   function dayNumber(caseObj, today){
@@ -477,7 +460,7 @@ function logicFactory(){
     }) : [];
     out.days = Array.isArray(out.days) ? out.days.map(function(d){
       const day = Object.assign(makeEmptyDay(d.date || ""), d || {});
-      day.collect = Object.assign(makeEmptyCollect(), d && d.collect ? d.collect : {});
+      delete day.collect;
       day.todos = Array.isArray(day.todos) ? day.todos.map(function(t){ return { id:t.id || makeId(), text:t.text || "", done:!!t.done }; }) : [];
       day.waits = Array.isArray(day.waits) ? day.waits.map(function(w){ return { id:w.id || makeId(), text:w.text || "", resolved:!!w.resolved }; }) : [];
       day.hooks = Array.isArray(day.hooks) ? day.hooks.map(function(h){ return { id:h.id || makeId(), text:h.text || "" }; }) : [];
@@ -560,12 +543,6 @@ function logicFactory(){
     return [caseObj.ageBand, sex, caseObj.cc].filter(Boolean).join("・");
   }
 
-  function collectSummary(collect){
-    return COLLECT_KEYS.map(function(key){
-      return COLLECT_LABELS[key] + COLLECT_MARKS[collect[key] || ""];
-    }).join(" ");
-  }
-
   function latestChangeItems(caseObj, today){
     return {
       meds:caseObj.meds.filter(function(m){ return m.startDate === today || m.endDate === today; }),
@@ -583,7 +560,11 @@ function logicFactory(){
     model.cases.filter(function(c){ return c.status === "active" && !c.deletedAt; }).forEach(function(caseObj){
       var day = getDay(caseObj, today) || makeEmptyDay(today);
       var changes = latestChangeItems(caseObj, today);
-      lines.push("## 症例: " + formatLabel(caseObj) + "（病日" + dayNumber(caseObj, today) + "）");
+      var sev = severityLabel(caseObj.severity);
+      lines.push("## 症例: " + (sev ? "【" + sev + "】" : "") + formatLabel(caseObj) + "（病日" + dayNumber(caseObj, today) + "）");
+      if(caseObj.patientSummary){
+        lines.push("P: " + caseObj.patientSummary.replace(/\n/g, " "));
+      }
       lines.push("### 問題リスト");
       var activeProblems = caseObj.problems.filter(function(p){ return p.active !== false && p.title; });
       if(activeProblems.length){
@@ -595,13 +576,14 @@ function logicFactory(){
       } else {
         lines.push("- なし");
       }
-      lines.push("### 今日の収集");
-      lines.push(collectSummary(day.collect) + (day.collect.note ? " ／ メモ: " + day.collect.note.replace(/\n/g, " ") : ""));
       lines.push("### 今日やる");
       if(day.todos.length){ day.todos.forEach(function(todo){ lines.push("- [" + (todo.done ? "x" : " ") + "] " + todo.text); }); }
       else { lines.push("- なし"); }
       lines.push("### 待ち");
       if(day.waits.length){ day.waits.forEach(function(wait){ lines.push("- [" + (wait.resolved ? "x" : " ") + "] " + wait.text); }); }
+      else { lines.push("- なし"); }
+      lines.push("### もしもプラン");
+      if(caseObj.contingency.length){ caseObj.contingency.forEach(function(item){ lines.push("- " + item.text); }); }
       else { lines.push("- なし"); }
       lines.push("### 引っかかり");
       if(day.hooks.length){ day.hooks.forEach(function(hook){ lines.push("- " + hook.text); }); }
@@ -627,6 +609,7 @@ function logicFactory(){
 
   function buildDischargeExport(caseObj){
     var c = ensureCaseShape(caseObj);
+    var routineList = routineLabels(c.admission.routine);
     var lines = [
       "---",
       "type: casebook-discharge",
@@ -639,21 +622,23 @@ function logicFactory(){
       "## 入院期間",
       "- 入院日: " + (c.admittedAt || ""),
       "- 退院日: " + (c.dischargedAt || ""),
+      "- 重症度: " + (severityLabel(c.severity) || "未設定"),
+      "",
+      "## 患者サマリ",
+      c.patientSummary || "- なし",
       "",
       "## 入院時記録",
-      c.admission.note || "",
+      c.admission.note || "- なし",
       "",
       "## ルーチン",
     ];
-    Object.keys(c.admission.routine).filter(function(key){ return c.admission.routine[key]; }).forEach(function(key){
-      lines.push("- " + key);
-    });
-    if(lines[lines.length - 1] === "## ルーチン"){ lines.push("- なし"); }
+    if(routineList.length){ routineList.forEach(function(label){ lines.push("- " + label); }); }
+    else { lines.push("- なし"); }
     lines.push("");
     lines.push("## 問題リスト");
     if(c.problems.length){
       c.problems.forEach(function(problem, index){
-        lines.push("### #" + (index + 1) + " " + (problem.title || "無題"));
+        lines.push("### #" + (index + 1) + " " + (problem.title || "未設定"));
         if(problem.assessment){ lines.push(problem.assessment); }
         lines.push("");
       });
@@ -665,7 +650,6 @@ function logicFactory(){
     if(c.days.length){
       c.days.forEach(function(day){
         lines.push("### " + day.date);
-        lines.push("- 収集: " + collectSummary(day.collect) + (day.collect.note ? " ／ " + day.collect.note.replace(/\n/g, " ") : ""));
         if(day.todos.length){ day.todos.forEach(function(todo){ lines.push("- Todo [" + (todo.done ? "x" : " ") + "] " + todo.text); }); }
         if(day.waits.length){ day.waits.forEach(function(wait){ lines.push("- Wait [" + (wait.resolved ? "x" : " ") + "] " + wait.text); }); }
         if(day.hooks.length){ day.hooks.forEach(function(hook){ lines.push("- Hook " + hook.text); }); }
@@ -697,156 +681,15 @@ function logicFactory(){
     lines.push("### 経過要約");
     lines.push(c.summary.course || "");
     lines.push("");
-    lines.push("### 転帰");
-    lines.push(c.summary.outcome || "");
-    return lines.join("\n");
-  }
-
-  function buildDailyExport(data, today){
-    var model = normalizeData(data);
-    var lines = ["# Casebook 日次書き出し " + today];
-    model.cases.filter(function(c){ return c.status === "active" && !c.deletedAt; }).forEach(function(caseObj){
-      var day = getDay(caseObj, today) || makeEmptyDay(today);
-      var changes = latestChangeItems(caseObj, today);
-      lines.push("## 症例 " + formatLabel(caseObj) + "（病日" + dayNumber(caseObj, today) + "）");
-      if(caseObj.patientSummary){
-        lines.push("P: " + caseObj.patientSummary.replace(/\n/g, " "));
-      }
-      if(caseObj.severity){
-        lines.push("重症度: " + severityLabel(caseObj.severity));
-      }
-      lines.push("### 問題リスト");
-      var activeProblems = caseObj.problems.filter(function(p){ return p.active !== false && p.title; });
-      if(activeProblems.length){
-        activeProblems.forEach(function(problem, index){
-          var text = "- #" + (index + 1) + " " + problem.title;
-          if(problem.assessment){ text += " / A: " + problem.assessment.replace(/\n/g, " "); }
-          lines.push(text);
-        });
-      } else {
-        lines.push("- なし");
-      }
-      lines.push("### 今日の収集");
-      lines.push(collectSummary(day.collect) + (day.collect.note ? " / メモ: " + day.collect.note.replace(/\n/g, " ") : ""));
-      lines.push("### 今日やる");
-      if(day.todos.length){ day.todos.forEach(function(todo){ lines.push("- [" + (todo.done ? "x" : " ") + "] " + todo.text); }); }
-      else { lines.push("- なし"); }
-      lines.push("### 待ち");
-      if(day.waits.length){ day.waits.forEach(function(wait){ lines.push("- [" + (wait.resolved ? "x" : " ") + "] " + wait.text); }); }
-      else { lines.push("- なし"); }
-      lines.push("### もしもプラン");
-      if(caseObj.contingency.length){ caseObj.contingency.forEach(function(item){ lines.push("- " + item.text); }); }
-      else { lines.push("- なし"); }
-      lines.push("### ひっかかり");
-      if(day.hooks.length){ day.hooks.forEach(function(hook){ lines.push("- " + hook.text); }); }
-      else { lines.push("- なし"); }
-      lines.push("### 薬剤・イベント");
-      if(!changes.meds.length && !changes.events.length){
-        lines.push("- 変化なし");
-      } else {
-        changes.meds.forEach(function(med){
-          var head = med.startDate === today ? "開始" : "終了";
-          var end = med.endDate ? "〜" + med.endDate.slice(5).replace("-", "/") : "";
-          lines.push("- " + head + ": " + med.name + " " + MED_ROUTE_LABELS[med.route] + " " + med.startDate.slice(5).replace("-", "/") + end);
-        });
-        changes.events.forEach(function(eventObj){
-          lines.push("- イベント " + eventObj.date.slice(5).replace("-", "/") + " " + EVENT_TYPE_LABELS[eventObj.type] + " " + eventObj.title);
-        });
-      }
-      lines.push("### 写真");
-      lines.push("- 入院時写真 " + caseObj.admission.photoIds.length + "枚。Obsidian 共有は /casebook と OCR を使用");
-    });
-    return lines.join("\n");
-  }
-
-  function buildDischargeExport(caseObj){
-    var c = ensureCaseShape(caseObj);
-    var routineList = routineLabels(c.admission.routine);
-    var lines = [
-      "---",
-      "type: casebook-discharge",
-      "date: " + (c.dischargedAt || c.admittedAt || ""),
-      "label: " + formatLabel(c),
-      "---",
-      "",
-      "# " + formatLabel(c),
-      "",
-      "## 入退院",
-      "- 入院日: " + (c.admittedAt || ""),
-      "- 退院日: " + (c.dischargedAt || ""),
-      "- 重症度: " + (severityLabel(c.severity) || "未設定"),
-      "",
-      "## 患者サマリ",
-      c.patientSummary || "- なし",
-      "",
-      "## 入院時記録",
-      c.admission.note || "- なし",
-      "",
-      "## ルーチン",
-    ];
-    if(routineList.length){ routineList.forEach(function(label){ lines.push("- " + label); }); }
-    else { lines.push("- なし"); }
-    lines.push("");
-    lines.push("## 問題リスト");
-    if(c.problems.length){
-      c.problems.forEach(function(problem, index){
-        lines.push("### #" + (index + 1) + " " + (problem.title || "未設定"));
-        if(problem.assessment){ lines.push(problem.assessment); }
-        lines.push("");
-      });
-    } else {
-      lines.push("- なし");
-      lines.push("");
-    }
-    lines.push("## 日々のログ");
-    if(c.days.length){
-      c.days.forEach(function(day){
-        lines.push("### " + day.date);
-        lines.push("- 収集: " + collectSummary(day.collect) + (day.collect.note ? " / " + day.collect.note.replace(/\n/g, " ") : ""));
-        if(day.todos.length){ day.todos.forEach(function(todo){ lines.push("- Todo [" + (todo.done ? "x" : " ") + "] " + todo.text); }); }
-        if(day.waits.length){ day.waits.forEach(function(wait){ lines.push("- Wait [" + (wait.resolved ? "x" : " ") + "] " + wait.text); }); }
-        if(day.hooks.length){ day.hooks.forEach(function(hook){ lines.push("- Hook " + hook.text); }); }
-        lines.push("");
-      });
-    } else {
-      lines.push("- なし");
-      lines.push("");
-    }
-    lines.push("## 薬剤一覧");
-    if(c.meds.length){
-      c.meds.forEach(function(med){
-        lines.push("- " + med.name + " / " + MED_ROUTE_LABELS[med.route] + " / " + med.startDate + "〜" + (med.endDate || "継続中") + (med.note ? " / " + med.note.replace(/\n/g, " ") : ""));
-      });
-    } else {
-      lines.push("- なし");
-    }
-    lines.push("");
-    lines.push("## イベント一覧");
-    if(c.events.length){
-      c.events.forEach(function(eventObj){
-        lines.push("- " + eventObj.date + " / " + EVENT_TYPE_LABELS[eventObj.type] + " / " + eventObj.title + (eventObj.note ? " / " + eventObj.note.replace(/\n/g, " ") : ""));
-      });
-    } else {
-      lines.push("- なし");
-    }
-    lines.push("");
-    lines.push("## 退院サマリ");
-    lines.push("### 経過");
-    lines.push(c.summary.course || "");
-    lines.push("");
-    lines.push("### 転帰");
-    lines.push(c.summary.outcome || "");
-    lines.push("");
-    lines.push("### 自分の診療");
+    lines.push("### 私の実践");
     lines.push(c.summary.myPractice || "");
     lines.push("");
-    lines.push("## 退院時未解決");
-    var pendingWaits = [];
-    c.days.forEach(function(day){
-      day.waits.filter(function(wait){ return !wait.resolved && wait.text; }).forEach(function(wait){
-        pendingWaits.push(wait.text);
-      });
-    });
+    lines.push("### 転帰");
+    lines.push(c.summary.outcome || "");
+    lines.push("");
+    lines.push("## 退院時未解消の待ち");
+    var lastDay = getLatestDay(c);
+    var pendingWaits = lastDay ? lastDay.waits.filter(function(wait){ return !wait.resolved && wait.text; }).map(function(wait){ return wait.text; }) : [];
     if(pendingWaits.length){
       pendingWaits.forEach(function(text){ lines.push("- " + text); });
     } else {
@@ -856,17 +699,13 @@ function logicFactory(){
   }
 
   return {
-    COLLECT_KEYS:COLLECT_KEYS,
     SEVERITY_LABELS:SEVERITY_LABELS,
-    COLLECT_LABELS:COLLECT_LABELS,
-    COLLECT_MARKS:COLLECT_MARKS,
     MED_ROUTE_LABELS:MED_ROUTE_LABELS,
     EVENT_TYPE_LABELS:EVENT_TYPE_LABELS,
     ROUTINE:ROUTINE,
     makeId:makeId,
     isoNow:isoNow,
     makeEmptyDay:makeEmptyDay,
-    makeEmptyCollect:makeEmptyCollect,
     ensureCaseShape:ensureCaseShape,
     normalizeData:normalizeData,
     getDay:getDay,
@@ -891,7 +730,6 @@ const KEY = "casebook:v2";
 const PHOTO_DB = "casebook-photos";
 const PHOTO_STORE = "photos";
 const ROUTINE = LOGIC.ROUTINE;
-const COLLECT_CYCLE = ["","ok","warn"];
 const todayISO = () => new Date().toISOString().slice(0,10);
 const esc = (s) => String(s || "").replace(/[&<>"]/g, (c) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c]));
 const timeLabel = (iso) => new Date(iso).toLocaleTimeString([], { hour:"2-digit", minute:"2-digit" });
@@ -1162,22 +1000,6 @@ function createCase(){
   closeModal();
   VIEW = { name:"case", caseId:caseObj.id, tab:"today", filter:VIEW.filter };
   persist();
-}
-
-function toggleCollect(caseId, key, date = todayISO()){
-  const caseObj = findCase(caseId);
-  const day = LOGIC.getDay(caseObj, date) || LOGIC.ensureTodayDay(caseObj, date);
-  const current = day.collect[key] || "";
-  const next = COLLECT_CYCLE[(COLLECT_CYCLE.indexOf(current) + 1) % COLLECT_CYCLE.length];
-  day.collect[key] = next;
-  persist();
-}
-
-function updateDayCollectNote(caseId, date, value){
-  const caseObj = findCase(caseId);
-  const day = LOGIC.getDay(caseObj, date) || LOGIC.ensureTodayDay(caseObj, date);
-  day.collect.note = value;
-  queueSave();
 }
 
 function updateCaseText(caseId, path, value){
@@ -1487,8 +1309,7 @@ function caseStats(caseObj){
   return {
     dayNumber:LOGIC.dayNumber(caseObj, todayISO()),
     todoOpen:day.todos.filter((x) => !x.done).length,
-    waitOpen:day.waits.filter((x) => !x.resolved).length,
-    collectDone:LOGIC.COLLECT_KEYS.filter((key) => day.collect[key]).length
+    waitOpen:day.waits.filter((x) => !x.resolved).length
   };
 }
 
@@ -1501,273 +1322,11 @@ function render(){
   renderSaveOnly();
 }
 
-function renderList(){
-  const items = visibleCases();
-  const active = activeCases();
-  const totalTodos = active.reduce((sum, c) => sum + caseStats(c).todoOpen, 0);
-  const totalWaits = active.reduce((sum, c) => sum + caseStats(c).waitOpen, 0);
-  const totalCollected = active.reduce((sum, c) => sum + (caseStats(c).collectDone === 5 ? 1 : 0), 0);
-  return `
-    <section class="hero">
-      <div class="hero-top">
-        <div>
-          <div class="eyebrow">Ward</div>
-          <h1 class="page">今日の症例カード</h1>
-          <div class="sub">一覧から「今日やる」「待ち」「引っかかり」をすぐ見て、夜に全症例を1回で書き出す。</div>
-        </div>
-        <div class="header-actions">
-          <button class="btn btn-primary" onclick="newCaseModal()">新規症例</button>
-          <button class="btn btn-ghost" onclick="copyDailyExport()">今日の書き出し</button>
-        </div>
-      </div>
-      <div class="privacy">PII禁止。氏名・患者ID・病院名の入力欄は作らない。ラベルは年代・性別・一言のみ。</div>
-      <div class="metrics">
-        <div class="metric"><div class="k">Active</div><div class="v">${active.length}</div><div class="s">入院中の症例</div></div>
-        <div class="metric"><div class="k">Open Todos</div><div class="v">${totalTodos}</div><div class="s">今日やる残数</div></div>
-        <div class="metric"><div class="k">Waiting</div><div class="v">${totalWaits}</div><div class="s">未解消の待ち</div></div>
-        <div class="metric"><div class="k">Collected</div><div class="v">${totalCollected}</div><div class="s">収集5項目が埋まった症例</div></div>
-      </div>
-      <div class="save-line" data-save-meta></div>
-    </section>
-    <div class="toolbar">
-      <button class="chip ${VIEW.filter === "active" ? "on" : ""}" onclick="setFilter('active')">入院中</button>
-      <button class="chip ${VIEW.filter === "discharged" ? "on" : ""}" onclick="setFilter('discharged')">退院</button>
-      <button class="chip ${VIEW.filter === "all" ? "on" : ""}" onclick="setFilter('all')">すべて</button>
-    </div>
-    ${items.length ? `<div class="case-grid">${items.map(renderCaseCard).join("")}</div>` : `<div class="empty">表示する症例がありません。</div>`}
-  `;
-}
-
-function renderCaseCard(caseObj){
-  const stats = caseStats(caseObj);
-  return `
-    <article class="case-card" onclick="go('case','${caseObj.id}')">
-      <div class="case-top">
-        <div>
-          <div class="case-label">${esc(LOGIC.formatLabel(caseObj) || "未設定")}</div>
-          <div class="case-cc">${esc(caseObj.cc || "一言未入力")}</div>
-        </div>
-        <div class="case-day mono">病日 ${stats.dayNumber}</div>
-      </div>
-      <div class="case-badges">
-        <span class="badge ${caseObj.status === "active" ? "active" : "done"}">${caseObj.status === "active" ? "入院中" : "退院"}</span>
-        <span class="badge todo">今日やる残 ${stats.todoOpen}</span>
-        <span class="badge wait">待ち ${stats.waitOpen}</span>
-        <span class="badge ${stats.collectDone === 5 ? "done" : "active"}">収集 ${stats.collectDone}/5</span>
-      </div>
-    </article>
-  `;
-}
-
-function renderCase(){
-  const caseObj = currentCase();
-  if(!caseObj){ VIEW.name = "list"; return renderList(); }
-  syncTodayView(caseObj);
-  const day = currentDay(caseObj);
-  const tab = VIEW.tab || "today";
-  return `
-    <div class="backline">
-      <button class="backlink" onclick="go('list')">一覧へ戻る</button>
-      <span class="panel-sub">/</span>
-      <span class="panel-sub">${esc(LOGIC.formatLabel(caseObj) || "症例")}</span>
-    </div>
-    <section class="panel case-head">
-      <div class="panel-body">
-        <div class="title-row">
-          <div>
-            <div class="eyebrow">Case</div>
-            <div class="title">${esc(LOGIC.formatLabel(caseObj) || "未設定")}</div>
-            <div class="meta">
-              <span>病日 ${LOGIC.dayNumber(caseObj, todayISO())}</span>
-              <span class="mono">入院 ${esc(caseObj.admittedAt || "")}</span>
-              ${caseObj.dischargedAt ? `<span class="mono">退院 ${esc(caseObj.dischargedAt)}</span>` : ""}
-              ${caseObj.lastExportedAt ? `<span class="mono">書き出し ${esc(caseObj.lastExportedAt.slice(0,16).replace("T"," "))}</span>` : ""}
-            </div>
-          </div>
-          <div class="header-actions">
-            <button class="btn btn-ghost" onclick="manualSave()">保存</button>
-            <button class="btn btn-ghost" onclick="trashCase('${caseObj.id}')">削除</button>
-          </div>
-        </div>
-        <div class="save-line" data-save-meta></div>
-      </div>
-      <div class="panel-head">
-        <div class="tabs">
-          <button class="tab-btn ${tab === "today" ? "on" : ""}" onclick="setTab('today')">今日のビュー</button>
-          <button class="tab-btn ${tab === "log" ? "on" : ""}" onclick="setTab('log')">過去ログ</button>
-          <button class="tab-btn ${tab === "timeline" ? "on" : ""}" onclick="setTab('timeline')">経過表</button>
-        </div>
-      </div>
-    </section>
-    ${tab === "today" ? renderTodayTab(caseObj, day) : tab === "log" ? renderLogTab(caseObj) : renderTimelineTab(caseObj)}
-  `;
-}
-
-function renderTodayTab(caseObj, day){
-  const admitExpanded = caseObj.admittedAt === todayISO();
-  return `
-    <section class="shell" style="margin-top:18px">
-      <div class="stack">
-        <section class="panel">
-          <div class="panel-head"><h2>今朝の収集</h2><div class="panel-sub">熱・食・便・眠・痛を － → ✓ → ⚠ で循環</div></div>
-          <div class="panel-body">
-            <div class="collect-grid">
-              ${LOGIC.COLLECT_KEYS.map((key) => {
-                const value = day.collect[key] || "";
-                return `<button class="collect-btn ${value === "ok" ? "on-ok" : value === "warn" ? "on-warn" : ""}" onclick="toggleCollect('${caseObj.id}','${key}')">
-                  <span>${esc(LOGIC.COLLECT_LABELS[key])}</span>
-                  <strong class="collect-mark">${esc(LOGIC.COLLECT_MARKS[value])}</strong>
-                </button>`;
-              }).join("")}
-            </div>
-            <div class="collect-note">
-              <textarea class="textarea" rows="3" placeholder="フリー欄" oninput="updateDayCollectNote('${caseObj.id}','${day.date}',this.value)">${esc(day.collect.note)}</textarea>
-            </div>
-          </div>
-        </section>
-
-        <section class="panel">
-          <div class="panel-head"><h2>問題リスト</h2><button class="btn btn-ghost" onclick="addProblem('${caseObj.id}')">追加</button></div>
-          <div class="panel-body list">
-            ${caseObj.problems.length ? caseObj.problems.map((problem, index) => `
-              <article class="prob-card">
-                <div class="prob-top">
-                  <div class="prob-order">#${index + 1}</div>
-                  <div class="prob-title">
-                    <input class="input" placeholder="1行タイトル" value="${esc(problem.title)}" oninput="updateProblem('${caseObj.id}','${problem.id}','title',this.value)">
-                  </div>
-                  <button class="prob-status ${problem.active ? "" : "off"}" onclick="updateProblem('${caseObj.id}','${problem.id}','active',${problem.active ? "false" : "true"})">${problem.active ? "active" : "inactive"}</button>
-                </div>
-                <div class="prob-body">
-                  <textarea class="textarea" rows="4" placeholder="Assessment" oninput="updateProblem('${caseObj.id}','${problem.id}','assessment',this.value)">${esc(problem.assessment)}</textarea>
-                  <div class="inline-actions">
-                    <button class="compact-btn" onclick="deleteProblem('${caseObj.id}','${problem.id}')">削除</button>
-                  </div>
-                </div>
-              </article>
-            `).join("") : `<div class="empty">問題を追加してください。</div>`}
-          </div>
-        </section>
-
-        <section class="panel">
-          <div class="panel-head"><h2>今日やる</h2><div class="panel-sub">未完は翌日へ自動繰越</div></div>
-          <div class="panel-body">
-            ${renderTodoLike(caseObj, day, "todo")}
-          </div>
-        </section>
-
-        <section class="panel">
-          <div class="panel-head"><h2>待ち</h2><div class="panel-sub">未解消は翌日へ自動繰越</div></div>
-          <div class="panel-body">
-            ${renderTodoLike(caseObj, day, "wait")}
-          </div>
-        </section>
-
-        <section class="panel">
-          <div class="panel-head"><h2>引っかかり</h2><div class="panel-sub">/casebook が深掘り抽出する学習の種</div></div>
-          <div class="panel-body">
-            ${renderTodoLike(caseObj, day, "hook")}
-          </div>
-        </section>
-      </div>
-
-      <div class="stack">
-        <section class="collapse">
-          <div class="collapse-head">
-            <div>
-              <h2>入院時</h2>
-              <div class="panel-sub">入院日に自動展開</div>
-            </div>
-            <button class="compact-btn" onclick="toggleSection(this,'admissionBody')">${admitExpanded ? "閉じる" : "開く"}</button>
-          </div>
-          <div class="collapse-body ${admitExpanded ? "" : "hide"}" id="admissionBody">
-            <label class="panel-sub">入院時記録</label>
-            <textarea class="textarea" rows="5" placeholder="入院時記録" oninput="updateCaseText('${caseObj.id}','admission.note',this.value)">${esc(caseObj.admission.note)}</textarea>
-            <div class="photo-note">⚠ 氏名・患者IDが写らない画角で。写ったら削除して撮り直す。</div>
-            <div style="margin-top:12px">
-              <input type="file" accept="image/*" capture="environment" multiple onchange="handlePhotoInput(this,'${caseObj.id}')">
-            </div>
-            <div class="photo-grid" id="photoGrid">${renderPhotoGrid(caseObj)}</div>
-            <div style="margin-top:14px" class="routine-grid">
-              ${ROUTINE.map((item) => `
-                <button class="routine-btn ${caseObj.admission.routine[item.k] ? "on" : ""}" onclick="toggleRoutine('${caseObj.id}','${item.k}')">
-                  <span class="routine-box">${caseObj.admission.routine[item.k] ? "✓" : ""}</span>
-                  <span class="routine-copy"><strong>${esc(item.t)}</strong><span>${esc(item.h)}</span></span>
-                </button>
-              `).join("")}
-            </div>
-          </div>
-        </section>
-
-        <section class="panel">
-          <div class="panel-head"><h2>薬剤</h2><div class="panel-sub">内服 / 注射</div></div>
-          <div class="panel-body">
-            <div class="modal-grid">
-              <input id="medName" class="input" placeholder="薬剤名">
-              <select id="medRoute" class="select"><option value="oral">内服</option><option value="inj">注射</option></select>
-              <input id="medStart" class="input" type="date" value="${todayISO()}">
-              <input id="medEnd" class="input" type="date">
-            </div>
-            <div style="margin-top:10px">
-              <input id="medNote" class="input" placeholder="メモ">
-            </div>
-            <div class="inline-actions" style="margin-top:10px"><button class="btn btn-ghost" onclick="createMed()">追加</button></div>
-            <div class="med-list" style="margin-top:14px">${renderMedList(caseObj)}</div>
-          </div>
-        </section>
-
-        <section class="panel">
-          <div class="panel-head"><h2>イベント</h2><div class="panel-sub">検査 / 手術 / 処置 / 治療 / その他</div></div>
-          <div class="panel-body">
-            <div class="modal-grid">
-              <input id="evDate" class="input" type="date" value="${todayISO()}">
-              <select id="evType" class="select">
-                <option value="test">検査</option>
-                <option value="surgery">手術</option>
-                <option value="procedure">処置</option>
-                <option value="treatment">治療</option>
-                <option value="other">その他</option>
-              </select>
-            </div>
-            <div style="margin-top:10px"><input id="evTitle" class="input" placeholder="タイトル"></div>
-            <div style="margin-top:10px"><input id="evNote" class="input" placeholder="メモ"></div>
-            <div class="inline-actions" style="margin-top:10px"><button class="btn btn-ghost" onclick="createEvent()">追加</button></div>
-            <div class="event-list" style="margin-top:14px">${renderEventList(caseObj)}</div>
-          </div>
-        </section>
-
-        <section class="collapse">
-          <div class="collapse-head">
-            <div>
-              <h2>退院時サマリ</h2>
-              <div class="panel-sub">退院前でも編集可</div>
-            </div>
-            <button class="compact-btn" onclick="toggleSection(this,'summaryBody')">開く</button>
-          </div>
-          <div class="collapse-body hide" id="summaryBody">
-            <label class="panel-sub">経過要約</label>
-            <textarea class="textarea" rows="5" oninput="updateCaseText('${caseObj.id}','summary.course',this.value)">${esc(caseObj.summary.course)}</textarea>
-            <label class="panel-sub" style="display:block;margin-top:10px">転帰</label>
-            <textarea class="textarea" rows="3" oninput="updateCaseText('${caseObj.id}','summary.outcome',this.value)">${esc(caseObj.summary.outcome)}</textarea>
-            <div class="inline-actions" style="margin-top:12px">
-              ${caseObj.status === "active"
-                ? `<button class="btn btn-primary" onclick="setCaseStatus('${caseObj.id}','discharged')">退院にする</button>`
-                : `<button class="btn btn-ghost" onclick="setCaseStatus('${caseObj.id}','active')">入院中へ戻す</button>`}
-              <button class="btn btn-ghost" onclick="copyDischargeExport('${caseObj.id}')">退院書き出し</button>
-            </div>
-          </div>
-        </section>
-      </div>
-    </section>
-  `;
-}
-
 function renderListV21(){
   const items = visibleCases();
   const active = activeCases();
   const totalTodos = active.reduce((sum, c) => sum + caseStats(c).todoOpen, 0);
   const totalWaits = active.reduce((sum, c) => sum + caseStats(c).waitOpen, 0);
-  const totalCollected = active.reduce((sum, c) => sum + (caseStats(c).collectDone === 5 ? 1 : 0), 0);
   return `
     <section class="hero">
       <div class="hero-top">
@@ -1786,7 +1345,6 @@ function renderListV21(){
         <div class="metric"><div class="k">Active</div><div class="v">${active.length}</div><div class="s">入院中の症例</div></div>
         <div class="metric"><div class="k">Open Todos</div><div class="v">${totalTodos}</div><div class="s">今日やる件数</div></div>
         <div class="metric"><div class="k">Waiting</div><div class="v">${totalWaits}</div><div class="s">未解決の待ち</div></div>
-        <div class="metric"><div class="k">Collected</div><div class="v">${totalCollected}</div><div class="s">収集 5 項目完了</div></div>
       </div>
       <div class="save-line" data-save-meta></div>
     </section>
@@ -1815,7 +1373,6 @@ function renderCaseCardV21(caseObj){
         ${caseObj.severity ? `<span class="badge severity-${caseObj.severity}">${esc(LOGIC.severityLabel(caseObj.severity))}</span>` : ""}
         <span class="badge todo">今日やる ${stats.todoOpen}</span>
         <span class="badge wait">待ち ${stats.waitOpen}</span>
-        <span class="badge ${stats.collectDone === 5 ? "done" : "active"}">収集 ${stats.collectDone}/5</span>
       </div>
     </article>
   `;
@@ -1879,24 +1436,6 @@ function renderTodayTabV21(caseObj, day){
   return `
     <section class="shell" style="margin-top:18px">
       <div class="stack">
-        <section class="panel">
-          <div class="panel-head"><h2>今日の収集</h2><div class="panel-sub">発熱・食事・便・睡眠・痛みの 5 項目</div></div>
-          <div class="panel-body">
-            <div class="collect-grid">
-              ${LOGIC.COLLECT_KEYS.map((key) => {
-                const value = day.collect[key] || "";
-                return `<button class="collect-btn ${value === "ok" ? "on-ok" : value === "warn" ? "on-warn" : ""}" onclick="toggleCollect('${caseObj.id}','${key}')">
-                  <span>${esc(LOGIC.COLLECT_LABELS[key])}</span>
-                  <strong class="collect-mark">${esc(LOGIC.COLLECT_MARKS[value])}</strong>
-                </button>`;
-              }).join("")}
-            </div>
-            <div class="collect-note">
-              <textarea class="textarea" rows="3" placeholder="フリー欄" oninput="updateDayCollectNote('${caseObj.id}','${day.date}',this.value)">${esc(day.collect.note)}</textarea>
-            </div>
-          </div>
-        </section>
-
         <section class="panel">
           <div class="panel-head"><h2>問題リスト</h2><button class="btn btn-ghost" onclick="addProblem('${caseObj.id}')">追加</button></div>
           <div class="panel-body list">
@@ -2146,24 +1685,13 @@ function renderLogTab(caseObj){
   const days = caseObj.days.slice().sort((a,b) => b.date.localeCompare(a.date));
   return `
     <section class="panel" style="margin-top:18px">
-      <div class="panel-head"><h2>過去ログ</h2><div class="panel-sub">collect / todos / waits / hooks を後から編集できる</div></div>
+      <div class="panel-head"><h2>過去ログ</h2><div class="panel-sub">todos / waits / hooks を後から編集できる</div></div>
       <div class="panel-body log-group">
         ${days.length ? days.map((day) => `
           <article class="log-card">
             <div class="log-title">
               <strong class="mono">${esc(day.date)}</strong>
               <span class="panel-sub">病日 ${LOGIC.dayNumber(caseObj, day.date)}</span>
-            </div>
-            <div class="mini-grid">
-              ${LOGIC.COLLECT_KEYS.map((key) => `
-                <button class="mini-cell" onclick="toggleCollect('${caseObj.id}','${key}','${day.date}')">
-                  <span>${esc(LOGIC.COLLECT_LABELS[key])}</span>
-                  <strong>${esc(LOGIC.COLLECT_MARKS[day.collect[key] || ""])}</strong>
-                </button>
-              `).join("")}
-            </div>
-            <div style="margin-top:10px">
-              <textarea class="textarea" rows="2" placeholder="収集メモ" oninput="updateDayCollectNote('${caseObj.id}','${day.date}',this.value)">${esc(day.collect.note)}</textarea>
             </div>
             <div style="margin-top:14px"><strong>今日やる</strong></div>
             ${renderTodoLike(caseObj, day, "todo")}
@@ -2194,12 +1722,6 @@ function renderTimelineTab(caseObj){
               </tr>
             </thead>
             <tbody>
-              ${LOGIC.COLLECT_KEYS.map((key) => `
-                <tr>
-                  <td>${esc(LOGIC.COLLECT_LABELS[key])}</td>
-                  ${days.map((day) => `<td class="${day.date === todayISO() ? "today" : ""}"><div class="mark">${esc(LOGIC.COLLECT_MARKS[day.collect[key] || ""])}</div></td>`).join("")}
-                </tr>
-              `).join("")}
               ${caseObj.meds.map((med) => `
                 <tr>
                   <td>${esc(med.name)}<div class="panel-sub">${esc(LOGIC.MED_ROUTE_LABELS[med.route])}</div></td>

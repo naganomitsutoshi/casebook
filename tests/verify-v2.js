@@ -37,7 +37,7 @@ const mkCase = () => ({
   events: [{ id: "e1", date: "2026-07-03", type: "検査", title: "嚥下造影", note: "" }],
   days: [{
     date: "2026-07-03",
-    collect: { fever: "ok", meal: "warn", bowel: "", sleep: "ok", pain: "ok", note: "食思不振" },
+    collect: { fever: "ok", meal: "warn", bowel: "", sleep: "ok", pain: "ok", note: "食思不振" }, // v3で廃止された旧形式（後方互換テストを兼ねる）
     todos: [{ id: "t1", text: "済んだ仕事", done: true }, { id: "t2", text: "未完の仕事", done: false }],
     waits: [{ id: "w1", text: "培養結果", resolved: false }, { id: "w2", text: "解消済み", resolved: true }],
     hooks: [{ id: "h1", text: "嚥下評価の根拠は？" }]
@@ -80,7 +80,6 @@ c = mkCase();
 Object.assign(c, L.rolloverCase(c, "2026-07-04"));
 const td = c.days.find(d => d.date === "2026-07-04");
 td.hooks.push({ id: "h2", text: "嚥下評価の根拠は？" });
-td.collect.note = "食思不振つづく";
 const daily = L.buildDailyExport({ version: 2, cases: [c] }, "2026-07-04");
 for (const s of ["2026-07-04", "80代", "誤嚥性肺炎", "未完の仕事", "培養結果", "嚥下評価の根拠は？"]) {
   if (!daily.includes(s)) { console.error("NG: 日次書き出しに欠落: " + s); process.exit(1); }
@@ -140,5 +139,20 @@ const dailyNoSum = L.buildDailyExport({ version: 2, cases: [noSum] }, "2026-07-0
 if (/^P: /m.test(dailyNoSum)) { console.error("NG: サマリ未記入なのに P: 行が出る"); process.exit(1); }
 // 後方互換: patientSummary / contingency の無い旧データでも動く（mkCase 自体が旧形式）
 console.log("v2.2 (ROUTINE整合 / 旧キー移行 / patientSummary / contingency): OK");
+
+// 8) v3: 「今日の収集」の全面削除（mkCase は collect 入りの旧形式＝後方互換を兼ねる）
+if (typeof L.COLLECT_KEYS !== "undefined" || typeof L.makeEmptyCollect !== "undefined") {
+  console.error("NG: collect 系の定数/関数が logic に残存"); process.exit(1);
+}
+const c3 = mkCase();
+Object.assign(c3, L.rolloverCase(c3, "2026-07-04"));
+const day3 = c3.days.find(d => d.date === "2026-07-04");
+if ("collect" in day3) { console.error("NG: 新しい日のエントリに collect が生成される"); process.exit(1); }
+if (c3.days.some(d => "collect" in d)) { console.error("NG: 旧データの collect が読み込み時に除去されない"); process.exit(1); }
+const daily3 = L.buildDailyExport({ version: 2, cases: [c3] }, "2026-07-04");
+if (daily3.includes("今日の収集")) { console.error("NG: 日次書き出しに今日の収集が残存"); process.exit(1); }
+const dis3 = L.buildDischargeExport(c3);
+if (dis3.includes("- 収集:")) { console.error("NG: 退院書き出しに収集行が残存"); process.exit(1); }
+console.log("v3 (collect廃止 / 旧データ後方互換): OK");
 
 console.log("ALL TESTS PASSED");
