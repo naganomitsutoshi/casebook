@@ -1,5 +1,5 @@
-<!DOCTYPE html>
-<!-- Casebook v2 Phase 1: today-first inpatient tracker with local-only storage -->
+﻿<!DOCTYPE html>
+<!-- Casebook v2.2: local-only inpatient tracker with template-aligned admission checklist and I-PASS handoff -->
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
@@ -370,6 +370,18 @@ function logicFactory(){
   const COLLECT_MARKS = { "":"-","ok":"✓","warn":"⚠" };
   const MED_ROUTE_LABELS = { oral:"内服", inj:"注射" };
   const EVENT_TYPE_LABELS = { test:"検査", surgery:"手術", procedure:"処置", treatment:"治療", other:"その他" };
+  const ROUTINE = [
+    {k:"meds", t:"休薬・内服調整", h:"抗血栓薬・DM薬・サプリ"},
+    {k:"allergy", t:"アレルギー・予防接種", h:"FA/DA・肺炎球菌等"},
+    {k:"sdm", t:"意思決定支援", h:"家族・代理決定者・ゴール"},
+    {k:"code", t:"Code status", h:"急変時方針（暫定）"},
+    {k:"outlook", t:"入院後の見通し", h:"推定在院日数・退院方向"},
+    {k:"bps", t:"BPSモデル", h:"心理・社会・Matters Most"},
+    {k:"deepin", t:"DEEP-IN＋CFS", h:"高齢者機能評価"},
+    {k:"risk", t:"リスクスクリーニング", h:"嚥下・転倒・褥瘡・VTE・抑制"},
+    {k:"rehab", t:"リハGoal", h:"病前ADL・退院先・退院基準"},
+    {k:"acp", t:"退院支援・ACP", h:"多職種・介護保険・IC"}
+  ];
 
   function makeId(){
     return Math.random().toString(36).slice(2,10);
@@ -395,6 +407,22 @@ function logicFactory(){
     return Number.isFinite(diff) && diff >= 0 ? diff + 1 : 1;
   }
 
+  function normalizeRoutine(routine){
+    const source = routine && typeof routine === "object" ? routine : {};
+    const next = {};
+    ROUTINE.forEach(function(item){
+      next[item.k] = !!source[item.k];
+    });
+    if(source.vte || source.delirium || source.risk){ next.risk = true; }
+    if(source.disposition || source.rehab){ next.rehab = true; }
+    return next;
+  }
+
+  function routineLabels(routine){
+    const safe = normalizeRoutine(routine);
+    return ROUTINE.filter(function(item){ return !!safe[item.k]; }).map(function(item){ return item.t; });
+  }
+
   function ensureCaseShape(caseObj){
     const base = {
       id:makeId(),
@@ -408,6 +436,8 @@ function logicFactory(){
       admittedAt:"",
       dischargedAt:null,
       admission:{ note:"", photoIds:[], routine:{} },
+      patientSummary:"",
+      contingency:[],
       problems:[],
       meds:[],
       events:[],
@@ -418,7 +448,11 @@ function logicFactory(){
     const out = Object.assign({}, base, caseObj || {});
     out.admission = Object.assign({}, base.admission, out.admission || {});
     out.admission.photoIds = Array.isArray(out.admission.photoIds) ? out.admission.photoIds.slice() : [];
-    out.admission.routine = Object.assign({}, out.admission.routine || {});
+    out.admission.routine = normalizeRoutine(out.admission.routine);
+    out.patientSummary = typeof out.patientSummary === "string" ? out.patientSummary : "";
+    out.contingency = Array.isArray(out.contingency) ? out.contingency.map(function(item){
+      return { id:item && item.id ? item.id : makeId(), text:item && item.text ? String(item.text) : "" };
+    }).filter(function(item){ return item.text; }) : [];
     out.problems = Array.isArray(out.problems) ? out.problems.map(function(p){
       return { id:p.id || makeId(), title:p.title || "", assessment:p.assessment || "", active:p.active !== false };
     }) : [];
@@ -675,6 +709,9 @@ function logicFactory(){
       var day = getDay(caseObj, today) || makeEmptyDay(today);
       var changes = latestChangeItems(caseObj, today);
       lines.push("## 症例 " + formatLabel(caseObj) + "（病日" + dayNumber(caseObj, today) + "）");
+      if(caseObj.patientSummary){
+        lines.push("P: " + caseObj.patientSummary.replace(/\n/g, " "));
+      }
       if(caseObj.severity){
         lines.push("重症度: " + severityLabel(caseObj.severity));
       }
@@ -696,6 +733,9 @@ function logicFactory(){
       else { lines.push("- なし"); }
       lines.push("### 待ち");
       if(day.waits.length){ day.waits.forEach(function(wait){ lines.push("- [" + (wait.resolved ? "x" : " ") + "] " + wait.text); }); }
+      else { lines.push("- なし"); }
+      lines.push("### もしもプラン");
+      if(caseObj.contingency.length){ caseObj.contingency.forEach(function(item){ lines.push("- " + item.text); }); }
       else { lines.push("- なし"); }
       lines.push("### ひっかかり");
       if(day.hooks.length){ day.hooks.forEach(function(hook){ lines.push("- " + hook.text); }); }
@@ -721,6 +761,7 @@ function logicFactory(){
 
   function buildDischargeExport(caseObj){
     var c = ensureCaseShape(caseObj);
+    var routineList = routineLabels(c.admission.routine);
     var lines = [
       "---",
       "type: casebook-discharge",
@@ -735,15 +776,16 @@ function logicFactory(){
       "- 退院日: " + (c.dischargedAt || ""),
       "- 重症度: " + (severityLabel(c.severity) || "未設定"),
       "",
+      "## 患者サマリ",
+      c.patientSummary || "- なし",
+      "",
       "## 入院時記録",
-      c.admission.note || "",
+      c.admission.note || "- なし",
       "",
       "## ルーチン",
     ];
-    Object.keys(c.admission.routine).filter(function(key){ return c.admission.routine[key]; }).forEach(function(key){
-      lines.push("- " + key);
-    });
-    if(lines[lines.length - 1] === "## ルーチン"){ lines.push("- なし"); }
+    if(routineList.length){ routineList.forEach(function(label){ lines.push("- " + label); }); }
+    else { lines.push("- なし"); }
     lines.push("");
     lines.push("## 問題リスト");
     if(c.problems.length){
@@ -820,6 +862,7 @@ function logicFactory(){
     COLLECT_MARKS:COLLECT_MARKS,
     MED_ROUTE_LABELS:MED_ROUTE_LABELS,
     EVENT_TYPE_LABELS:EVENT_TYPE_LABELS,
+    ROUTINE:ROUTINE,
     makeId:makeId,
     isoNow:isoNow,
     makeEmptyDay:makeEmptyDay,
@@ -833,6 +876,7 @@ function logicFactory(){
     purgeTrash:purgeTrash,
     formatLabel:formatLabel,
     severityLabel:severityLabel,
+    routineLabels:routineLabels,
     dayNumber:dayNumber,
     buildDailyExport:buildDailyExport,
     buildDischargeExport:buildDischargeExport
@@ -846,18 +890,7 @@ if(typeof module !== "undefined"){ module.exports = LOGIC; }
 const KEY = "casebook:v2";
 const PHOTO_DB = "casebook-photos";
 const PHOTO_STORE = "photos";
-const ROUTINE = [
-  {k:"vte", t:"VTE予防", h:"リスク評価・予防"},
-  {k:"delirium", t:"せん妄", h:"予防・評価"},
-  {k:"nutrition", t:"栄養", h:"食事・嚥下"},
-  {k:"pain", t:"疼痛", h:"評価と対応"},
-  {k:"devices", t:"デバイス", h:"不要物の確認"},
-  {k:"meds", t:"常用薬", h:"継続・中止整理"},
-  {k:"allergy", t:"アレルギー", h:"薬剤歴"},
-  {k:"disposition", t:"退院先", h:"Day1から意識"},
-  {k:"rehab", t:"リハ・ADL", h:"活動性"},
-  {k:"code", t:"急変時方針", h:"ACP / code"}
-];
+const ROUTINE = LOGIC.ROUTINE;
 const COLLECT_CYCLE = ["","ok","warn"];
 const todayISO = () => new Date().toISOString().slice(0,10);
 const esc = (s) => String(s || "").replace(/[&<>"]/g, (c) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c]));
@@ -965,6 +998,14 @@ let saveTimer = null;
 let toastTimer = null;
 let PHOTO_URLS = {};
 
+function debounce(fn, wait){
+  return function(){
+    const args = arguments;
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => fn.apply(null, args), wait);
+  };
+}
+
 function findCase(id){
   return DB.cases.find((c) => c.id === id) || null;
 }
@@ -1022,10 +1063,7 @@ async function saveNow(options = {}){
   return SAVE_OK;
 }
 
-function queueSave(){
-  clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => { saveNow(); }, 360);
-}
+const queueSave = debounce(function(){ saveNow(); }, 360);
 
 function persist(options = {}){
   if(options.render !== false){ render(); }
@@ -1151,6 +1189,10 @@ function updateCaseText(caseId, path, value){
   queueSave();
 }
 
+function updatePatientSummary(caseId, value){
+  updateCaseText(caseId, "patientSummary", value);
+}
+
 function setCaseSeverity(caseId, severity){
   const caseObj = findCase(caseId);
   caseObj.severity = severity;
@@ -1217,6 +1259,22 @@ function doDeleteTextItem(caseId, date, kind, itemId){
   const key = kind === "todo" ? "todos" : kind === "wait" ? "waits" : "hooks";
   day[key] = day[key].filter((x) => x.id !== itemId);
   closeModal();
+  persist();
+}
+
+function addContingency(caseId){
+  const input = document.getElementById("contingencyInput");
+  const text = (input.value || "").trim();
+  if(!text){ return; }
+  const caseObj = findCase(caseId);
+  caseObj.contingency.push({ id:LOGIC.makeId(), text });
+  input.value = "";
+  persist();
+}
+
+function removeContingency(caseId, itemId){
+  const caseObj = findCase(caseId);
+  caseObj.contingency = caseObj.contingency.filter((item) => item.id !== itemId);
   persist();
 }
 
@@ -1793,6 +1851,8 @@ function renderCaseV21(){
             <button class="btn btn-ghost" onclick="trashCase('${caseObj.id}')">削除</button>
           </div>
         </div>
+        <label class="panel-sub" style="display:block;margin-top:12px">患者サマリ（1〜2行・申し送り用）</label>
+        <textarea class="textarea" rows="2" placeholder="80代男性、誤嚥性肺炎で入院。抗菌薬治療中、嚥下評価待ち" oninput="updatePatientSummary('${caseObj.id}',this.value)">${esc(caseObj.patientSummary || "")}</textarea>
         <div class="save-line" data-save-meta></div>
         <div class="panel-sub" style="margin-top:12px">重症度</div>
         <div class="severity-row" style="margin-top:8px">
@@ -1875,6 +1935,13 @@ function renderTodayTabV21(caseObj, day){
         </section>
 
         <section class="panel">
+          <div class="panel-head"><h2>もしもプラン</h2><div class="panel-sub">もし◯◯なら→◯◯する</div></div>
+          <div class="panel-body">
+            ${renderContingencyList(caseObj)}
+          </div>
+        </section>
+
+        <section class="panel">
           <div class="panel-head"><h2>ひっかかり</h2><div class="panel-sub">学びや違和感のメモ</div></div>
           <div class="panel-body">
             ${renderTodoLike(caseObj, day, "hook")}
@@ -1887,14 +1954,14 @@ function renderTodayTabV21(caseObj, day){
           <div class="collapse-head">
             <div>
               <h2>入院時記録</h2>
-              <div class="panel-sub">写真とルーチンもここで管理</div>
+              <div class="panel-sub">写真とテンプレ節チェックをここで管理</div>
             </div>
             <button class="compact-btn" onclick="toggleSection(this,'admissionBody')">${admitExpanded ? "閉じる" : "開く"}</button>
           </div>
           <div class="collapse-body ${admitExpanded ? "" : "hide"}" id="admissionBody">
             <label class="panel-sub">入院時記録</label>
             <textarea class="textarea" rows="5" placeholder="入院時記録" oninput="updateCaseText('${caseObj.id}','admission.note',this.value)">${esc(caseObj.admission.note)}</textarea>
-            <div class="photo-note">写真はローカル保存のみです。必要なら共有後に端末側で削除してください。</div>
+            <div class="photo-note">テンプレ準拠のカルテ記載は写真で残す。チェックは各節を書いたかの確認</div>
             <div style="margin-top:12px">
               <input type="file" accept="image/*" capture="environment" multiple onchange="handlePhotoInput(this,'${caseObj.id}')">
             </div>
@@ -1972,6 +2039,30 @@ function renderTodayTabV21(caseObj, day){
         </section>
       </div>
     </section>
+  `;
+}
+
+function renderContingencyList(caseObj){
+  return `
+    <div class="list">
+      ${caseObj.contingency.length ? caseObj.contingency.map((item) => `
+        <div class="row-item">
+          <div class="row-main">
+            <div class="row-check"></div>
+            <div class="row-content">
+              <div class="row-text">${esc(item.text)}</div>
+              <div class="inline-actions">
+                <button class="compact-btn" onclick="removeContingency('${caseObj.id}','${item.id}')">削除</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      `).join("") : `<div class="empty">まだありません。</div>`}
+    </div>
+    <div class="inline-actions" style="margin-top:12px">
+      <input id="contingencyInput" class="input" placeholder="夜間38.5℃以上→血培2セット">
+      <button class="btn btn-ghost" onclick="addContingency('${caseObj.id}')">追加</button>
+    </div>
   `;
 }
 

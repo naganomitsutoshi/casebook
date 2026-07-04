@@ -109,4 +109,36 @@ L.buildDailyExport({ version: 2, cases: [legacy] }, "2026-07-04");
 L.buildDischargeExport(legacy);
 console.log("v2.1 (severity / myPractice / pending-waits / backward-compat): OK");
 
+// 7) v2.2: ROUTINE テンプレ整合・旧キー移行・患者サマリ・もしもプラン
+if (!Array.isArray(L.ROUTINE) || L.ROUTINE.length !== 10) { console.error("NG: LOGIC.ROUTINE が10項目でない"); process.exit(1); }
+for (const k of ["meds", "allergy", "sdm", "code", "outlook", "bps", "deepin", "risk", "rehab", "acp"]) {
+  if (!L.ROUTINE.some(r => r.k === k)) { console.error("NG: ROUTINE に " + k + " が無い"); process.exit(1); }
+}
+// 旧キー移行: vte→risk, disposition→rehab, nutrition は破棄
+const mig = mkCase();
+mig.admission.routine = { vte: true, disposition: true, nutrition: true, meds: true };
+const disMig = L.buildDischargeExport(mig);
+for (const s of ["リスクスクリーニング", "リハGoal", "休薬・内服調整"]) {
+  if (!disMig.includes(s)) { console.error("NG: 退院書き出しに移行後ルーチン欠落: " + s); process.exit(1); }
+}
+if (/^- (vte|disposition|nutrition|meds)$/m.test(disMig)) { console.error("NG: 退院書き出しに raw キーが残存"); process.exit(1); }
+// 患者サマリ（I-PASS P）
+const c22 = mkCase();
+Object.assign(c22, L.rolloverCase(c22, "2026-07-04"));
+c22.patientSummary = "80代男性、誤嚥性肺炎で入院。抗菌薬治療中、嚥下評価待ち";
+c22.contingency = [{ id: "x1", text: "夜間38.5℃以上→血培2セット" }];
+const daily22 = L.buildDailyExport({ version: 2, cases: [c22] }, "2026-07-04");
+if (!daily22.includes("P: 80代男性、誤嚥性肺炎で入院")) { console.error("NG: 日次書き出しに患者サマリなし"); process.exit(1); }
+if (!daily22.includes("もしもプラン") || !daily22.includes("夜間38.5℃以上→血培2セット")) { console.error("NG: 日次書き出しにもしもプランなし"); process.exit(1); }
+const dis22 = L.buildDischargeExport(c22);
+if (!dis22.includes("患者サマリ")) { console.error("NG: 退院書き出しに患者サマリ節なし"); process.exit(1); }
+if (dis22.includes("血培2セット")) { console.error("NG: 退院書き出しに contingency が混入"); process.exit(1); }
+// サマリ未記入なら P: 行を出さない
+const noSum = mkCase();
+Object.assign(noSum, L.rolloverCase(noSum, "2026-07-04"));
+const dailyNoSum = L.buildDailyExport({ version: 2, cases: [noSum] }, "2026-07-04");
+if (/^P: /m.test(dailyNoSum)) { console.error("NG: サマリ未記入なのに P: 行が出る"); process.exit(1); }
+// 後方互換: patientSummary / contingency の無い旧データでも動く（mkCase 自体が旧形式）
+console.log("v2.2 (ROUTINE整合 / 旧キー移行 / patientSummary / contingency): OK");
+
 console.log("ALL TESTS PASSED");
