@@ -92,4 +92,21 @@ for (const s of ["casebook-discharge", "入院時メモ", "ABPC/SBT", "嚥下造
 }
 console.log("buildDailyExport / buildDischargeExport: OK");
 
+// 6) v2.1: 重症度・私の実践・退院時未解消の待ち
+c.severity = "watcher";
+c.summary.myPractice = "家族カンファを自分で主導した";
+const daily21 = L.buildDailyExport({ version: 2, cases: [c] }, "2026-07-04");
+if (!daily21.includes("要注意")) { console.error("NG: 日次書き出しに重症度なし"); process.exit(1); }
+const dis21 = L.buildDischargeExport(c);
+if (!dis21.includes("家族カンファを自分で主導した")) { console.error("NG: 退院書き出しに私の実践なし"); process.exit(1); }
+if (!dis21.includes("培養結果")) { console.error("NG: 退院時未解消の待ちが列挙されない"); process.exit(1); }
+// 後方互換: severity / myPractice の無い旧データでも動く
+const legacy = mkCase();
+delete legacy.severity;
+delete legacy.summary.myPractice;
+Object.assign(legacy, L.rolloverCase(legacy, "2026-07-04"));
+L.buildDailyExport({ version: 2, cases: [legacy] }, "2026-07-04");
+L.buildDischargeExport(legacy);
+console.log("v2.1 (severity / myPractice / pending-waits / backward-compat): OK");
+
 console.log("ALL TESTS PASSED");
