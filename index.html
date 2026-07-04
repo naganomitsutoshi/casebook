@@ -1,5 +1,5 @@
 ﻿<!DOCTYPE html>
-<!-- Casebook v4: local-only inpatient tracker. v4 is a mobile-first design refresh (bottom nav, dark mode, compact rows, sticky tabs); data model and logic unchanged from v3. Implemented directly by Claude (Fable 5), no Codex. -->
+<!-- Casebook v5: local-only inpatient tracker. v5 strips the dashboard/LP styling for a flat tool-first UI (compact case rows, severity sort, collapsed case editor) per research + QA review; data model and logic unchanged. Implemented directly by Claude (Fable 5), no Codex. -->
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
@@ -12,59 +12,49 @@
 <style>
   :root{
     color-scheme:light dark;
-    --paper:#f4f6f4;
-    --paper-hi:#f8faf8;
-    --paper-lo:#eef2ee;
-    --veil:rgba(248,250,248,.88);
-    --card:rgba(255,255,255,.92);
-    --surface-2:#f8f7f2;
-    --sheet:#ffffff;
-    --field:#fcfdfa;
-    --btn-bg:rgba(255,255,255,.86);
-    --ink:#16231d;
-    --ink-soft:#516159;
-    --ink-faint:#85948b;
+    --r-s:8px;
+    --r-m:12px;
+    --r-l:16px;
+    --paper:#f3f5f3;
+    --card:#ffffff;
+    --surface-2:#f6f7f5;
+    --field:#fbfcfa;
+    --ink:#1b2620;
+    --ink-soft:#4e5d55;
+    --ink-faint:#63736a;
     --on-accent:#ffffff;
-    --line:#d8ded8;
-    --line-soft:#e9eee9;
+    --line:#d9dfd9;
+    --line-soft:#e8ece8;
     --accent:#1f6f5f;
     --accent-deep:#164f44;
-    --accent-soft:#e4f1ed;
+    --accent-soft:#e2efeb;
     --accent-line:#b6d7ce;
-    --warn:#ba7a1a;
-    --warn-soft:#f7ecd9;
-    --warn-line:#edcf9a;
-    --danger:#b54444;
-    --danger-soft:#fdecec;
-    --danger-line:#efc5c5;
-    --done:#507c53;
-    --done-soft:#e7f0e7;
-    --info:#3d648d;
-    --info-soft:#e7f0fa;
-    --glow:rgba(31,111,95,.08);
-    --shadow:0 1px 2px rgba(22,35,29,.05),0 10px 30px rgba(22,35,29,.07);
-    --radius:16px;
+    --warn:#996414;
+    --warn-soft:#f6ecd9;
+    --warn-line:#e6cfa0;
+    --danger:#b04040;
+    --danger-soft:#fbeaea;
+    --danger-line:#eec6c6;
+    --done:#47734a;
+    --done-soft:#e6efe6;
+    --info:#38618c;
+    --info-soft:#e6eff9;
   }
   @media(prefers-color-scheme:dark){
     :root{
-      --paper:#121a15;
-      --paper-hi:#151e18;
-      --paper-lo:#0e1511;
-      --veil:rgba(18,26,21,.88);
-      --card:rgba(26,36,30,.94);
-      --surface-2:#202b24;
-      --sheet:#1a241e;
-      --field:#151f19;
-      --btn-bg:rgba(32,43,36,.9);
-      --ink:#e4ece6;
-      --ink-soft:#a8b6ad;
-      --ink-faint:#75857b;
+      --paper:#131a16;
+      --card:#1b241f;
+      --surface-2:#212b25;
+      --field:#171f1a;
+      --ink:#e5ece7;
+      --ink-soft:#a9b7ae;
+      --ink-faint:#8b9a90;
       --on-accent:#0d1410;
-      --line:#2e3a32;
-      --line-soft:#27322b;
-      --accent:#54ab93;
+      --line:#2f3a33;
+      --line-soft:#28322b;
+      --accent:#57ab93;
       --accent-deep:#7cc4ae;
-      --accent-soft:#1c352d;
+      --accent-soft:#1e352d;
       --accent-line:#2f5548;
       --warn:#d8a24f;
       --warn-soft:#352a15;
@@ -76,68 +66,67 @@
       --done-soft:#20301f;
       --info:#8db4dd;
       --info-soft:#1c2a3a;
-      --glow:rgba(84,171,147,.10);
-      --shadow:0 1px 2px rgba(0,0,0,.35),0 10px 30px rgba(0,0,0,.3);
     }
   }
   *{box-sizing:border-box;margin:0;padding:0}
   html{-webkit-text-size-adjust:100%}
   body{
-    font-family:"Inter","Noto Sans JP",system-ui,sans-serif;
-    background:
-      radial-gradient(circle at top right, var(--glow), transparent 28%),
-      linear-gradient(180deg, var(--paper-hi) 0%, var(--paper) 55%, var(--paper-lo) 100%);
+    font-family:system-ui,-apple-system,"Segoe UI","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic UI",sans-serif;
+    background:var(--paper);
     color:var(--ink);
     line-height:1.55;
     min-height:100vh;
-    padding-bottom:72px;
+    padding-bottom:48px;
   }
   button,input,textarea,select{font:inherit}
   button{border:none;background:none;cursor:pointer;color:inherit}
   textarea{resize:vertical}
-  .mono{font-family:"IBM Plex Mono",ui-monospace,monospace}
+  .mono{font-family:ui-monospace,"Consolas",monospace}
   .hide{display:none!important}
+  .sub{color:var(--ink-soft);font-size:14px}
 
   .topbar{
     position:sticky;top:0;z-index:50;
-    backdrop-filter:blur(14px);
-    background:var(--veil);
-    border-bottom:1px solid var(--line-soft);
+    background:var(--paper);
+    border-bottom:1px solid var(--line);
     padding-top:env(safe-area-inset-top);
   }
   .topbar-in{
-    max-width:1100px;margin:0 auto;padding:14px 18px;
+    max-width:1100px;margin:0 auto;padding:10px 18px;
     display:flex;align-items:center;gap:12px;
   }
-  .brand{display:flex;flex-direction:column;cursor:pointer}
-  .brand strong{font-size:18px;letter-spacing:-.02em;display:flex;align-items:center;gap:8px}
+  .brand{display:flex;align-items:center;gap:8px;cursor:pointer;min-height:44px}
+  .brand strong{font-size:17px;display:flex;align-items:center;gap:8px}
   .brand strong::before{
-    content:"";width:10px;height:10px;border-radius:50%;
-    background:linear-gradient(135deg,var(--accent),#6ea48d);
-    box-shadow:0 0 0 5px var(--glow);
+    content:"";width:9px;height:9px;border-radius:50%;
+    background:var(--accent);
   }
-  .brand span{font-size:11px;color:var(--ink-faint);letter-spacing:.08em;text-transform:uppercase}
   .spacer{flex:1}
   .header-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
   .pill-btn,.tab-btn,.chip,.btn{
-    min-height:44px;border-radius:12px;transition:.15s ease;
+    min-height:44px;border-radius:10px;transition:background .15s ease,border-color .15s ease,color .15s ease;
   }
   .pill-btn,.tab-btn,.chip{
-    border:1px solid var(--line);background:var(--btn-bg);
+    border:1px solid var(--line);background:var(--card);
     padding:0 14px;display:inline-flex;align-items:center;gap:8px;
   }
-  .pill-btn:hover,.tab-btn:hover,.chip:hover{border-color:var(--accent);color:var(--accent)}
+  @media(hover:hover){
+    .pill-btn:hover,.tab-btn:hover,.chip:hover{border-color:var(--accent);color:var(--accent)}
+    .btn-primary:hover{background:var(--accent-deep)}
+    .compact-btn:hover{border-color:var(--accent);color:var(--accent)}
+    .row-del:hover{color:var(--danger);background:var(--danger-soft)}
+    .case-row:hover{border-color:var(--accent)}
+  }
   .btn{
     display:inline-flex;align-items:center;justify-content:center;gap:8px;
     padding:0 16px;font-weight:700;
   }
-  .btn-primary{background:var(--accent);color:var(--on-accent);box-shadow:var(--shadow)}
-  .btn-primary:hover{background:var(--accent-deep)}
-  .btn-ghost{background:var(--btn-bg);border:1px solid var(--line)}
+  .btn-primary{background:var(--accent);color:var(--on-accent)}
+  .btn-ghost{background:var(--card);border:1px solid var(--line)}
   .btn-danger{background:var(--danger-soft);color:var(--danger);border:1px solid var(--danger-line)}
   .btn-block{width:100%}
   .chip,.tab-btn,.pill-btn{font-size:13px;font-weight:600}
-  .chip.on{background:var(--ink);color:var(--paper-hi);border-color:var(--ink)}
+  .chip.on{background:var(--ink);color:var(--paper);border-color:var(--ink)}
   .count-badge{
     min-width:22px;height:22px;padding:0 7px;border-radius:999px;
     background:var(--accent-soft);color:var(--accent);display:inline-flex;
@@ -146,134 +135,125 @@
 
   .bottombar{
     position:fixed;left:0;right:0;bottom:0;z-index:60;display:none;
-    background:var(--veil);backdrop-filter:blur(14px);
+    background:var(--paper);
     border-top:1px solid var(--line);
     padding:6px 10px calc(6px + env(safe-area-inset-bottom));
   }
   .bottombar-in{display:flex;gap:6px;max-width:640px;margin:0 auto}
   .bnav{
-    position:relative;flex:1;min-height:52px;border-radius:12px;
+    position:relative;flex:1;min-height:52px;border-radius:var(--r-m);
     display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
-    font-size:11px;font-weight:700;color:var(--ink-soft);transition:.15s ease;
+    font-size:11px;font-weight:700;color:var(--ink-soft);
   }
   .bnav .ico{font-size:18px;line-height:1.2}
   .bnav.on{color:var(--accent);background:var(--accent-soft)}
   .bnav .count-badge{
-    position:absolute;top:2px;right:calc(50% - 28px);
+    position:absolute;top:2px;right:calc(50% - 30px);
     min-width:18px;height:18px;font-size:10px;padding:0 5px;
     background:var(--accent);color:var(--on-accent);
   }
 
-  main{max-width:1100px;margin:0 auto;padding:22px 18px}
-  .eyebrow{font-size:11px;text-transform:uppercase;letter-spacing:.16em;color:var(--accent);font-weight:800;margin-bottom:8px}
-  h1.page{font-size:30px;line-height:1.1;letter-spacing:-.03em;margin-bottom:6px}
-  .sub{color:var(--ink-soft);font-size:14px;max-width:780px}
+  main{max-width:1100px;margin:0 auto;padding:14px 18px}
+  .page-head{
+    display:flex;justify-content:space-between;align-items:flex-start;gap:12px;
+    margin-bottom:14px;flex-wrap:wrap;
+  }
+  .page-title{font-size:20px;font-weight:800}
+  .toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
+  .list-note{
+    font-size:12px;color:var(--ink-faint);margin:0 2px 12px;
+  }
+  .list-foot{
+    margin-top:16px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;
+  }
+  .linklike{
+    color:var(--ink-soft);font-size:13px;font-weight:700;
+    min-height:44px;display:inline-flex;align-items:center;gap:4px;
+  }
 
-  .hero{
-    background:var(--card);
-    border:1px solid var(--line);box-shadow:var(--shadow);
-    border-radius:28px;padding:22px 22px 18px;margin-bottom:20px;
+  .case-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+  .case-row{
+    background:var(--card);border:1px solid var(--line);border-radius:var(--r-m);
+    border-left:4px solid var(--line);
+    padding:10px 12px;cursor:pointer;
   }
-  .hero-top{display:flex;align-items:flex-start;gap:16px;justify-content:space-between;flex-wrap:wrap}
-  .privacy{
-    margin-top:16px;background:var(--warn-soft);
-    border:1px solid var(--warn-line);border-radius:14px;padding:12px 14px;
-    color:var(--warn);font-size:13px;font-weight:600;
-  }
-  .save-line{margin-top:12px;font-size:12px;color:var(--ink-faint)}
-  .toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:20px 0}
-
-  .metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:18px}
-  .metric{
-    background:var(--card);border:1px solid var(--line);border-radius:18px;
-    padding:16px;box-shadow:var(--shadow)
-  }
-  .metric .k{font-size:11px;color:var(--ink-faint);text-transform:uppercase;letter-spacing:.12em}
-  .metric .v{margin-top:8px;font-size:30px;line-height:1;font-weight:800;letter-spacing:-.04em}
-  .metric .s{margin-top:5px;font-size:13px;color:var(--ink-soft)}
-
-  .case-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
-  .case-card{
-    background:var(--card);border:1px solid var(--line);border-radius:20px;
-    box-shadow:var(--shadow);padding:18px;cursor:pointer;transition:.16s ease;
-  }
-  .case-card:hover{transform:translateY(-1px);border-color:var(--accent)}
-  .case-top{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
-  .case-label{font-size:18px;font-weight:800;letter-spacing:-.02em}
-  .case-cc{margin-top:4px;color:var(--ink-soft);font-size:14px}
+  .case-row.sev-unstable{border-left-color:var(--danger)}
+  .case-row.sev-watcher{border-left-color:var(--warn)}
+  .case-row.sev-stable{border-left-color:var(--done)}
+  .case-row-top{display:flex;justify-content:space-between;gap:10px;align-items:baseline}
+  .case-label{font-size:16px;font-weight:700}
   .case-day{font-size:12px;color:var(--ink-faint);white-space:nowrap}
   .case-sum{
-    margin-top:10px;font-size:13px;color:var(--ink-soft);
-    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
+    margin-top:2px;font-size:13px;color:var(--ink-soft);
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
   }
-  .case-badges{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
-  .badge{
-    border-radius:999px;padding:7px 11px;font-size:12px;font-weight:700;
-    display:inline-flex;align-items:center;gap:6px;
+  .case-flags{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+  .flag{
+    border-radius:999px;padding:3px 9px;font-size:12px;font-weight:700;
+    background:var(--surface-2);color:var(--ink-soft);
+    display:inline-flex;align-items:center;gap:4px;
   }
-  .badge.active{background:var(--accent-soft);color:var(--accent)}
-  .badge.todo{background:var(--info-soft);color:var(--info)}
-  .badge.wait{background:var(--warn-soft);color:var(--warn)}
-  .badge.done{background:var(--done-soft);color:var(--done)}
-  .badge.trash{background:var(--danger-soft);color:var(--danger)}
-  .badge.severity-stable{background:var(--done-soft);color:var(--done)}
-  .badge.severity-watcher{background:var(--warn-soft);color:var(--warn)}
-  .badge.severity-unstable{background:var(--danger-soft);color:var(--danger)}
+  .flag.todo{background:var(--info-soft);color:var(--info)}
+  .flag.wait{background:var(--warn-soft);color:var(--warn)}
+  .flag.clear{background:var(--done-soft);color:var(--done)}
+  .flag.trash{background:var(--danger-soft);color:var(--danger)}
+  .flag.severity-stable{background:var(--done-soft);color:var(--done)}
+  .flag.severity-watcher{background:var(--warn-soft);color:var(--warn)}
+  .flag.severity-unstable{background:var(--danger-soft);color:var(--danger)}
   .empty{
-    padding:40px 18px;border:1px dashed var(--line);border-radius:20px;
+    padding:28px 16px;border:1px dashed var(--line);border-radius:var(--r-m);
     text-align:center;color:var(--ink-faint);background:var(--card)
   }
 
-  .backline{display:flex;gap:8px;align-items:center;margin-bottom:16px;flex-wrap:wrap}
+  .backline{display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap}
   .backlink{font-size:13px;font-weight:700;color:var(--ink-soft);min-height:44px;display:inline-flex;align-items:center}
   .shell{
-    display:grid;grid-template-columns:minmax(0,1.25fr) minmax(300px,.75fr);gap:18px;
+    display:grid;grid-template-columns:minmax(0,1.25fr) minmax(300px,.75fr);gap:14px;
     align-items:start;
   }
-  .stack{display:flex;flex-direction:column;gap:16px}
+  .stack{display:flex;flex-direction:column;gap:12px}
   .panel{
-    background:var(--card);border:1px solid var(--line);border-radius:22px;
-    box-shadow:var(--shadow);overflow:hidden;
+    background:var(--card);border:1px solid var(--line);border-radius:var(--r-l);
+    overflow:hidden;
   }
   .panel-head{
-    padding:16px 18px;border-bottom:1px solid var(--line-soft);
+    padding:12px 14px;border-bottom:1px solid var(--line-soft);
     display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap
   }
-  .panel-head h2{font-size:16px;letter-spacing:-.02em}
+  .panel-head h2{font-size:15px}
   .panel-sub{font-size:12px;color:var(--ink-faint)}
-  .panel-body{padding:16px 18px}
+  .panel-body{padding:12px 14px}
 
-  .case-head{
-    background:
-      linear-gradient(135deg, var(--glow), transparent 40%),
-      var(--card);
-  }
   .case-head .title-row{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap}
-  .case-head .title{font-size:26px;line-height:1.05;font-weight:800;letter-spacing:-.04em}
-  .case-head .meta{margin-top:10px;display:flex;gap:10px;flex-wrap:wrap;color:var(--ink-soft);font-size:13px}
+  .case-head .title{font-size:18px;line-height:1.25;font-weight:800}
+  .case-head .meta{
+    margin-top:6px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;
+    color:var(--ink-soft);font-size:13px;
+  }
+  .head-actions{display:flex;gap:8px;flex-shrink:0}
   .tabs-bar{
-    display:flex;gap:8px;margin-top:14px;overflow-x:auto;
+    display:flex;gap:8px;margin-top:12px;overflow-x:auto;
     padding:4px 0;-webkit-overflow-scrolling:touch;
   }
   .tab-btn{flex-shrink:0}
-  .tab-btn.on{background:var(--ink);color:var(--paper-hi);border-color:var(--ink)}
+  .tab-btn.on{background:var(--ink);color:var(--paper);border-color:var(--ink)}
 
   .input,.textarea,.select{
-    width:100%;border:1px solid var(--line);border-radius:14px;background:var(--field);
-    padding:12px 13px;color:var(--ink);font-size:16px;
+    width:100%;border:1px solid var(--line);border-radius:var(--r-m);background:var(--field);
+    padding:11px 12px;color:var(--ink);font-size:16px;
   }
   .input:focus,.textarea:focus,.select:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
-  .add-row{display:flex;gap:8px;margin-top:12px}
+  .add-row{display:flex;gap:8px;margin-bottom:12px}
   .add-row .input{flex:1;min-width:0}
 
   .list{display:flex;flex-direction:column;gap:8px}
   .row-item{
-    display:flex;gap:6px;align-items:center;
-    border:1px solid var(--line);border-radius:14px;background:var(--surface-2);
-    padding:4px 4px 4px 8px;
+    display:flex;gap:4px;align-items:center;
+    border:1px solid var(--line);border-radius:var(--r-m);background:var(--surface-2);
+    padding:2px 2px 2px 6px;
   }
   .row-check{
-    width:44px;height:44px;border-radius:10px;flex-shrink:0;
+    width:44px;height:44px;border-radius:var(--r-s);flex-shrink:0;
     display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;
     position:relative;
   }
@@ -283,58 +263,56 @@
   }
   .row-check span{position:relative;z-index:1}
   .row-check.done::before{background:var(--done);border-color:var(--done)}
-  .row-check.done{color:#fff}
+  .row-check.done{color:var(--on-accent)}
   .row-check.wait::before{background:var(--warn);border-color:var(--warn)}
-  .row-check.wait{color:#fff}
+  .row-check.wait{color:var(--on-accent)}
   .row-dot{
-    width:24px;height:44px;flex-shrink:0;display:flex;align-items:center;justify-content:center;
+    width:22px;height:44px;flex-shrink:0;display:flex;align-items:center;justify-content:center;
   }
-  .row-dot::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--accent-line)}
+  .row-dot::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--accent-line)}
   .row-input{
     flex:1;min-width:0;border:none;background:transparent;color:var(--ink);
-    font-size:16px;font-weight:600;padding:11px 4px;border-radius:8px;
+    font-size:16px;font-weight:500;padding:11px 4px;border-radius:var(--r-s);
   }
   .row-input:focus{outline:none;background:var(--field);box-shadow:0 0 0 2px var(--accent-soft)}
   .row-input.muted{text-decoration:line-through;color:var(--ink-faint)}
   .row-del{
-    width:40px;height:44px;flex-shrink:0;border-radius:10px;
+    width:44px;height:44px;flex-shrink:0;border-radius:var(--r-s);
     display:flex;align-items:center;justify-content:center;
     color:var(--ink-faint);font-size:18px;
   }
-  .row-del:hover{color:var(--danger);background:var(--danger-soft)}
   .inline-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
   .compact-btn{
-    min-height:36px;padding:0 10px;border-radius:10px;border:1px solid var(--line);
-    background:var(--btn-bg);font-size:12px;font-weight:700
+    min-height:36px;padding:0 12px;border-radius:var(--r-s);border:1px solid var(--line);
+    background:var(--card);font-size:12px;font-weight:700
   }
-  .compact-btn:hover{border-color:var(--accent);color:var(--accent)}
 
-  .prob-card{border:1px solid var(--line);border-radius:18px;background:var(--surface-2);overflow:hidden}
-  .prob-top{display:flex;gap:10px;align-items:center;padding:12px}
+  .prob-card{border:1px solid var(--line);border-radius:var(--r-m);background:var(--surface-2);overflow:hidden}
+  .prob-top{display:flex;gap:10px;align-items:center;padding:10px}
   .prob-order{font-size:12px;font-weight:800;color:var(--accent);width:26px;flex-shrink:0}
   .prob-title{flex:1;min-width:0}
-  .prob-title .input{font-weight:700;background:var(--sheet)}
+  .prob-title .input{font-weight:700;background:var(--card)}
   .prob-status{font-size:12px;font-weight:700;border-radius:999px;padding:6px 10px;min-height:36px;background:var(--done-soft);color:var(--done)}
   .prob-status.off{background:var(--surface-2);color:var(--ink-faint);border:1px solid var(--line)}
-  .prob-body{padding:0 12px 12px}
+  .prob-body{padding:0 10px 10px}
   .severity-row{display:flex;gap:8px;flex-wrap:wrap}
-  .severity-btn.on{border-color:transparent;color:#fff}
+  .severity-btn.on{border-color:transparent;color:var(--on-accent)}
   .severity-btn.on.severity-stable{background:var(--done)}
   .severity-btn.on.severity-watcher{background:var(--warn)}
   .severity-btn.on.severity-unstable{background:var(--danger)}
 
   .collapse{
-    border:1px solid var(--line);border-radius:18px;background:var(--surface-2)
+    border:1px solid var(--line);border-radius:var(--r-m);background:var(--surface-2)
   }
   .collapse-head{
-    padding:14px 15px;display:flex;justify-content:space-between;gap:12px;align-items:center
+    padding:12px 13px;display:flex;justify-content:space-between;gap:12px;align-items:center
   }
-  .collapse-body{padding:0 15px 15px}
+  .collapse-body{padding:0 13px 13px}
 
-  .routine-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+  .routine-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
   .routine-btn{
-    min-height:52px;padding:10px 12px;border-radius:14px;border:1px solid var(--line);
-    background:var(--sheet);text-align:left;display:flex;gap:10px
+    min-height:52px;padding:10px 12px;border-radius:var(--r-m);border:1px solid var(--line);
+    background:var(--card);text-align:left;display:flex;gap:10px
   }
   .routine-btn.on{background:var(--accent-soft);border-color:var(--accent-line)}
   .routine-box{
@@ -345,33 +323,33 @@
   .routine-copy span{display:block;font-size:11px;color:var(--ink-faint);margin-top:1px}
 
   .photo-note{
-    margin-top:12px;padding:11px 12px;border-radius:14px;background:var(--warn-soft);
+    margin-top:12px;padding:10px 12px;border-radius:var(--r-m);background:var(--warn-soft);
     border:1px solid var(--warn-line);color:var(--warn);font-size:12px;font-weight:700
   }
   .file-btn{position:relative;overflow:hidden;cursor:pointer}
   .file-btn input{position:absolute;inset:0;opacity:0;width:100%;cursor:pointer}
-  .photo-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:12px}
-  .photo-card{border:1px solid var(--line);border-radius:16px;overflow:hidden;background:var(--sheet)}
+  .photo-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:12px}
+  .photo-card{border:1px solid var(--line);border-radius:var(--r-m);overflow:hidden;background:var(--card)}
   .photo-card img{display:block;width:100%;aspect-ratio:4/3;object-fit:cover;background:var(--surface-2)}
-  .photo-actions{padding:10px;display:flex;gap:8px;flex-wrap:wrap}
+  .photo-actions{padding:8px;display:flex;gap:8px;flex-wrap:wrap}
 
-  .event-list,.med-list{display:flex;flex-direction:column;gap:10px}
+  .event-list,.med-list{display:flex;flex-direction:column;gap:8px}
   .event-item,.med-item{
-    padding:12px;border:1px solid var(--line);border-radius:16px;background:var(--surface-2)
+    padding:10px 12px;border:1px solid var(--line);border-radius:var(--r-m);background:var(--surface-2)
   }
   .line-top{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
   .line-title{font-weight:700}
-  .line-sub{font-size:12px;color:var(--ink-soft);margin-top:4px}
+  .line-sub{font-size:12px;color:var(--ink-soft);margin-top:2px}
 
-  .log-group{display:flex;flex-direction:column;gap:12px}
+  .log-group{display:flex;flex-direction:column;gap:10px}
   .log-card{
-    border:1px solid var(--line);border-radius:18px;background:var(--surface-2);padding:14px
+    border:1px solid var(--line);border-radius:var(--r-m);background:var(--surface-2);padding:12px
   }
-  .log-title{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:12px}
+  .log-title{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:10px}
 
-  .timeline-wrap{overflow:auto;border:1px solid var(--line);border-radius:18px}
+  .timeline-wrap{overflow:auto;border:1px solid var(--line);border-radius:var(--r-m)}
   .timeline{
-    min-width:720px;border-collapse:separate;border-spacing:0;width:100%;background:var(--sheet)
+    min-width:720px;border-collapse:separate;border-spacing:0;width:100%;background:var(--card)
   }
   .timeline th,.timeline td{
     border-right:1px solid var(--line-soft);border-bottom:1px solid var(--line-soft);
@@ -387,8 +365,8 @@
   .band-tag{display:block;font-size:10px;font-weight:800;text-align:center;color:var(--ink-soft);white-space:nowrap}
   .cell-stack{display:flex;flex-direction:column;gap:4px;align-items:center}
   .event-dot{
-    width:24px;height:24px;border-radius:50%;background:var(--accent);color:var(--on-accent);
-    display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;margin:0 auto
+    width:36px;height:36px;border-radius:50%;background:var(--accent);color:var(--on-accent);
+    display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;margin:0 auto
   }
   .tl-legend{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;align-items:center}
   .legend-chip{font-size:11px;font-weight:700;padding:4px 10px;border-radius:999px}
@@ -397,27 +375,28 @@
   .legend-chip.ev{background:var(--accent-soft);color:var(--accent)}
 
   .modal-bg{
-    position:fixed;inset:0;background:rgba(10,16,12,.55);backdrop-filter:blur(4px);
+    position:fixed;inset:0;background:rgba(10,16,12,.55);
     z-index:100;display:flex;align-items:flex-end;justify-content:center;padding:0
   }
   @media(min-width:620px){.modal-bg{align-items:center;padding:20px}}
   .modal{
     width:100%;max-width:560px;max-height:92vh;overflow:auto;
-    border-radius:24px 24px 0 0;background:var(--sheet);padding:22px;
-    padding-bottom:calc(22px + env(safe-area-inset-bottom));
-    box-shadow:0 -10px 40px rgba(0,0,0,.2)
+    border-radius:var(--r-l) var(--r-l) 0 0;background:var(--card);padding:20px;
+    padding-bottom:calc(20px + env(safe-area-inset-bottom));
+    box-shadow:0 -10px 40px rgba(0,0,0,.25)
   }
-  @media(min-width:620px){.modal{border-radius:24px;padding-bottom:22px}}
-  .modal h3{font-size:22px;letter-spacing:-.03em}
+  @media(min-width:620px){.modal{border-radius:var(--r-l);padding-bottom:20px}}
+  .modal h3{font-size:20px}
   .modal p.sub{margin-top:6px;margin-bottom:16px}
   .modal-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
   .modal-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}
 
+  .save-line{margin-top:10px;font-size:12px;color:var(--ink-faint)}
   .toast{
     position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom));
     transform:translateX(-50%) translateY(20px);
-    background:var(--ink);color:var(--paper-hi);padding:12px 16px;border-radius:12px;
-    box-shadow:0 10px 32px rgba(0,0,0,.22);opacity:0;transition:.22s;z-index:110;pointer-events:none;
+    background:var(--ink);color:var(--paper);padding:12px 16px;border-radius:var(--r-m);
+    box-shadow:0 10px 32px rgba(0,0,0,.25);opacity:0;transition:.22s;z-index:110;pointer-events:none;
     max-width:calc(100vw - 32px);
   }
   .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
@@ -433,23 +412,19 @@
     body{padding-bottom:calc(88px + env(safe-area-inset-bottom))}
     .tabs-bar{
       position:sticky;top:0;z-index:40;
-      background:var(--veil);backdrop-filter:blur(12px);
-      margin:14px -14px 0;padding:10px 14px;
+      background:var(--paper);
+      margin:12px -14px 0;padding:8px 14px;
+      border-bottom:1px solid var(--line-soft);
     }
     .toast{bottom:calc(88px + env(safe-area-inset-bottom))}
   }
   @media(max-width:520px){
-    main{padding:16px 14px}
-    .topbar-in{padding:12px 14px}
-    h1.page{font-size:24px}
-    .hero{padding:18px 16px 14px;border-radius:22px}
+    main{padding:12px 14px}
+    .topbar-in{padding:8px 14px}
     .routine-grid,.modal-grid,.photo-grid{grid-template-columns:1fr}
-    .metrics{gap:8px}
-    .metric{padding:12px}
-    .metric .v{font-size:24px}
-    .metric .s{font-size:11px}
-    .panel-head,.panel-body{padding-left:14px;padding-right:14px}
+    .panel-head,.panel-body{padding-left:12px;padding-right:12px}
   }
+
 </style>
 </head>
 <body>
@@ -457,7 +432,6 @@
     <div class="topbar-in">
       <div class="brand" onclick="go('list')">
         <strong>Casebook</strong>
-        <span>today-first ward notebook</span>
       </div>
       <div class="spacer"></div>
       <div class="header-actions">
@@ -479,8 +453,7 @@
     <div class="bottombar-in">
       <button class="bnav" data-nav="list" onclick="go('list')"><span class="ico">▤</span>一覧</button>
       <button class="bnav" onclick="newCaseModal()"><span class="ico">＋</span>新規</button>
-      <button class="bnav" onclick="copyDailyExport()"><span class="ico">⇧</span>書き出し<span class="count-badge" data-count="export">0</span></button>
-      <button class="bnav" data-nav="trash" onclick="go('trash')"><span class="ico">♻</span>ゴミ箱</button>
+      <button class="bnav" onclick="copyDailyExport()"><span class="ico">⧉</span>書き出し<span class="count-badge" data-count="export">0</span></button>
     </div>
   </nav>
   <div id="modalMount"></div>
@@ -1057,8 +1030,15 @@ function renderSaveOnly(){
 }
 
 function go(name, caseId = null, extra = {}){
-  VIEW = Object.assign({}, VIEW, extra, { name, caseId:caseId ?? VIEW.caseId });
+  const nextId = caseId ?? VIEW.caseId;
+  if(name !== "case" || nextId !== VIEW.caseId){ VIEW.caseEdit = false; }
+  VIEW = Object.assign({}, VIEW, extra, { name, caseId:nextId });
   window.scrollTo(0, 0);
+  render();
+}
+
+function toggleCaseEdit(){
+  VIEW.caseEdit = !VIEW.caseEdit;
   render();
 }
 
@@ -1114,7 +1094,7 @@ function newCaseModal(){
       </div>
     </div>
     <div style="margin-top:10px">
-      <label class="panel-sub">一言</label>
+      <label class="panel-sub">主訴・病名</label>
       <input id="ncCc" class="input" placeholder="例: 誤嚥性肺炎" autofocus onkeydown="if(event.key==='Enter'){createCase()}">
     </div>
     <div class="modal-actions">
@@ -1469,58 +1449,54 @@ function render(){
   renderSaveOnly();
 }
 
+const SEVERITY_ORDER = { unstable:0, watcher:1, stable:2, "":3 };
+
+function sortCasesForList(list){
+  return list.slice().sort((a, b) => {
+    const s = (SEVERITY_ORDER[a.severity] ?? 3) - (SEVERITY_ORDER[b.severity] ?? 3);
+    if(s !== 0){ return s; }
+    return caseStats(b).todoOpen - caseStats(a).todoOpen;
+  });
+}
+
 function renderListV21(){
-  const items = visibleCases();
+  const items = sortCasesForList(visibleCases());
   const active = activeCases();
   const totalTodos = active.reduce((sum, c) => sum + caseStats(c).todoOpen, 0);
   const totalWaits = active.reduce((sum, c) => sum + caseStats(c).waitOpen, 0);
   return `
-    <section class="hero">
-      <div class="hero-top">
-        <div>
-          <div class="eyebrow">Ward</div>
-          <h1 class="page">今日の症例カード</h1>
-          <div class="sub">一覧から今日やる・待ち・ひっかかりを確認し、最後にまとめて書き出します。</div>
-        </div>
-        <div class="header-actions">
-          <button class="btn btn-primary" onclick="newCaseModal()">新規症例</button>
-          <button class="btn btn-ghost" onclick="copyDailyExport()">日次書き出し</button>
-        </div>
-      </div>
-      <div class="privacy">PII は入れず、年齢帯・性別・一言のみで運用します。写真はローカル保存です。</div>
-      <div class="metrics">
-        <div class="metric"><div class="k">Active</div><div class="v">${active.length}</div><div class="s">入院中の症例</div></div>
-        <div class="metric"><div class="k">Open Todos</div><div class="v">${totalTodos}</div><div class="s">今日やる件数</div></div>
-        <div class="metric"><div class="k">Waiting</div><div class="v">${totalWaits}</div><div class="s">未解決の待ち</div></div>
-      </div>
-      <div class="save-line" data-save-meta></div>
-    </section>
     <div class="toolbar">
+      <button class="btn btn-primary" onclick="newCaseModal()">新規症例</button>
       <button class="chip ${VIEW.filter === "active" ? "on" : ""}" onclick="setFilter('active')">入院中</button>
       <button class="chip ${VIEW.filter === "discharged" ? "on" : ""}" onclick="setFilter('discharged')">退院</button>
       <button class="chip ${VIEW.filter === "all" ? "on" : ""}" onclick="setFilter('all')">すべて</button>
     </div>
+    <div class="list-note">入院中 ${active.length}件 ／ 今日やる残 ${totalTodos} ／ 待ち ${totalWaits}</div>
     ${items.length ? `<div class="case-grid">${items.map(renderCaseCardV21).join("")}</div>` : `<div class="empty">表示できる症例がありません。</div>`}
+    <div class="list-foot">
+      <button class="linklike" onclick="go('trash')">ゴミ箱（<span data-count="trash">0</span>）</button>
+      <span class="panel-sub" data-save-meta></span>
+    </div>
   `;
 }
 
 function renderCaseCardV21(caseObj){
   const stats = caseStats(caseObj);
+  const sev = caseObj.severity;
+  const noOpen = !stats.todoOpen && !stats.waitOpen;
   return `
-    <article class="case-card" onclick="go('case','${caseObj.id}')">
-      <div class="case-top">
-        <div>
-          <div class="case-label">${esc(LOGIC.formatLabel(caseObj) || "未設定")}</div>
-          <div class="case-cc">${esc(caseObj.cc || "一言未入力")}</div>
-        </div>
+    <article class="case-row sev-${sev || "none"}" onclick="go('case','${caseObj.id}')">
+      <div class="case-row-top">
+        <div class="case-label">${esc(LOGIC.formatLabel(caseObj) || "未設定")}</div>
         <div class="case-day mono">病日 ${stats.dayNumber}</div>
       </div>
       ${caseObj.patientSummary ? `<div class="case-sum">${esc(caseObj.patientSummary)}</div>` : ""}
-      <div class="case-badges">
-        <span class="badge ${caseObj.status === "active" ? "active" : "done"}">${caseObj.status === "active" ? "入院中" : "退院"}</span>
-        ${caseObj.severity ? `<span class="badge severity-${caseObj.severity}">${esc(LOGIC.severityLabel(caseObj.severity))}</span>` : ""}
-        <span class="badge todo">今日やる ${stats.todoOpen}</span>
-        <span class="badge wait">待ち ${stats.waitOpen}</span>
+      <div class="case-flags">
+        ${sev ? `<span class="flag severity-${sev}">${esc(LOGIC.severityLabel(sev))}</span>` : ""}
+        ${caseObj.status !== "active" ? `<span class="flag">退院</span>` : ""}
+        ${stats.todoOpen ? `<span class="flag todo">今日やる残 ${stats.todoOpen}</span>` : ""}
+        ${stats.waitOpen ? `<span class="flag wait">待ち ${stats.waitOpen}</span>` : ""}
+        ${noOpen && caseObj.status === "active" ? `<span class="flag clear">未処理なし</span>` : ""}
       </div>
     </article>
   `;
@@ -1534,37 +1510,40 @@ function renderCaseV21(){
   const tab = VIEW.tab || "today";
   return `
     <div class="backline">
-      <button class="backlink" onclick="go('list')">一覧へ戻る</button>
-      <span class="panel-sub">/</span>
-      <span class="panel-sub">${esc(LOGIC.formatLabel(caseObj) || "症例")}</span>
+      <button class="backlink" onclick="go('list')">← 一覧</button>
     </div>
     <section class="panel case-head">
       <div class="panel-body">
         <div class="title-row">
           <div>
-            <div class="eyebrow">Case</div>
             <div class="title">${esc(LOGIC.formatLabel(caseObj) || "未設定")}</div>
             <div class="meta">
+              ${caseObj.severity ? `<span class="flag severity-${caseObj.severity}">${esc(LOGIC.severityLabel(caseObj.severity))}</span>` : `<span class="flag">重症度未設定</span>`}
               <span>病日 ${LOGIC.dayNumber(caseObj, todayISO())}</span>
               <span class="mono">入院 ${esc(caseObj.admittedAt || "")}</span>
               ${caseObj.dischargedAt ? `<span class="mono">退院 ${esc(caseObj.dischargedAt)}</span>` : ""}
-              ${caseObj.lastExportedAt ? `<span class="mono">書き出し ${esc(caseObj.lastExportedAt.slice(0,16).replace("T"," "))}</span>` : ""}
             </div>
           </div>
-          <div class="header-actions">
-            <button class="btn btn-ghost" onclick="manualSave()">保存</button>
-            <button class="btn btn-ghost" onclick="trashCase('${caseObj.id}')">削除</button>
+          <div class="head-actions">
+            <button class="compact-btn" onclick="manualSave()">保存</button>
+            <button class="compact-btn" onclick="toggleCaseEdit()">${VIEW.caseEdit ? "閉じる" : "編集"}</button>
           </div>
         </div>
-        <label class="panel-sub" style="display:block;margin-top:12px">患者サマリ（1〜2行・申し送り用）</label>
-        <textarea class="textarea" rows="2" placeholder="80代男性、誤嚥性肺炎で入院。抗菌薬治療中、嚥下評価待ち" oninput="updatePatientSummary('${caseObj.id}',this.value)">${esc(caseObj.patientSummary || "")}</textarea>
-        <div class="save-line" data-save-meta></div>
-        <div class="panel-sub" style="margin-top:12px">重症度</div>
-        <div class="severity-row" style="margin-top:8px">
-          <button class="pill-btn severity-btn ${caseObj.severity === "" ? "on" : ""}" onclick="setCaseSeverity('${caseObj.id}','')">未設定</button>
-          <button class="pill-btn severity-btn severity-stable ${caseObj.severity === "stable" ? "on severity-stable" : ""}" onclick="setCaseSeverity('${caseObj.id}','stable')">安定</button>
-          <button class="pill-btn severity-btn severity-watcher ${caseObj.severity === "watcher" ? "on severity-watcher" : ""}" onclick="setCaseSeverity('${caseObj.id}','watcher')">要注意</button>
-          <button class="pill-btn severity-btn severity-unstable ${caseObj.severity === "unstable" ? "on severity-unstable" : ""}" onclick="setCaseSeverity('${caseObj.id}','unstable')">不安定</button>
+        <div class="${VIEW.caseEdit ? "" : "hide"}" id="caseEditBody">
+          <label class="panel-sub" style="display:block;margin-top:12px">患者サマリ（1〜2行・申し送り用）</label>
+          <textarea class="textarea" rows="2" placeholder="80代男性、誤嚥性肺炎で入院。抗菌薬治療中、嚥下評価待ち" oninput="updatePatientSummary('${caseObj.id}',this.value)">${esc(caseObj.patientSummary || "")}</textarea>
+          <div class="panel-sub" style="margin-top:12px">重症度</div>
+          <div class="severity-row" style="margin-top:8px">
+            <button class="pill-btn severity-btn ${caseObj.severity === "" ? "on" : ""}" onclick="setCaseSeverity('${caseObj.id}','')">未設定</button>
+            <button class="pill-btn severity-btn severity-stable ${caseObj.severity === "stable" ? "on severity-stable" : ""}" onclick="setCaseSeverity('${caseObj.id}','stable')">安定</button>
+            <button class="pill-btn severity-btn severity-watcher ${caseObj.severity === "watcher" ? "on severity-watcher" : ""}" onclick="setCaseSeverity('${caseObj.id}','watcher')">要注意</button>
+            <button class="pill-btn severity-btn severity-unstable ${caseObj.severity === "unstable" ? "on severity-unstable" : ""}" onclick="setCaseSeverity('${caseObj.id}','unstable')">不安定</button>
+          </div>
+          <div class="inline-actions" style="margin-top:12px">
+            <button class="compact-btn" onclick="trashCase('${caseObj.id}')">症例を削除</button>
+          </div>
+          <div class="save-line" data-save-meta></div>
+          ${caseObj.lastExportedAt ? `<div class="save-line">最終書き出し ${esc(caseObj.lastExportedAt.slice(0,16).replace("T"," "))}</div>` : ""}
         </div>
       </div>
     </section>
@@ -1604,7 +1583,7 @@ function renderTodayTabV21(caseObj, day){
         </section>
 
         <section class="panel">
-          <div class="panel-head"><h2>ひっかかり</h2><div class="panel-sub">学びや違和感のメモ</div></div>
+          <div class="panel-head"><h2>引っかかり</h2><div class="panel-sub">学びや違和感のメモ</div></div>
           <div class="panel-body">
             ${renderTodoLike(caseObj, day, "hook")}
           </div>
@@ -1620,7 +1599,7 @@ function renderTodayTabV21(caseObj, day){
                   <div class="prob-title">
                     <input class="input" placeholder="1行タイトル" value="${esc(problem.title)}" oninput="updateProblem('${caseObj.id}','${problem.id}','title',this.value)">
                   </div>
-                  <button class="prob-status ${problem.active ? "" : "off"}" onclick="updateProblem('${caseObj.id}','${problem.id}','active',${problem.active ? "false" : "true"})">${problem.active ? "active" : "inactive"}</button>
+                  <button class="prob-status ${problem.active ? "" : "off"}" onclick="updateProblem('${caseObj.id}','${problem.id}','active',${problem.active ? "false" : "true"})">${problem.active ? "継続中" : "解決"}</button>
                 </div>
                 <div class="prob-body">
                   <textarea class="textarea" rows="4" placeholder="Assessment" oninput="updateProblem('${caseObj.id}','${problem.id}','assessment',this.value)">${esc(problem.assessment)}</textarea>
@@ -1730,6 +1709,10 @@ function renderTodayTabV21(caseObj, day){
 
 function renderContingencyList(caseObj){
   return `
+    <div class="add-row">
+      <input id="contingencyInput" class="input" placeholder="夜間38.5℃以上→血培2セット" enterkeyhint="next" onkeydown="if(event.key==='Enter'){addContingency('${caseObj.id}')}">
+      <button class="btn btn-ghost" onclick="addContingency('${caseObj.id}')">追加</button>
+    </div>
     <div class="list">
       ${caseObj.contingency.length ? caseObj.contingency.map((item) => `
         <div class="row-item">
@@ -1738,10 +1721,6 @@ function renderContingencyList(caseObj){
           <button class="row-del" onclick="removeContingency('${caseObj.id}','${item.id}')" aria-label="削除">×</button>
         </div>
       `).join("") : `<div class="empty">まだありません。</div>`}
-    </div>
-    <div class="add-row">
-      <input id="contingencyInput" class="input" placeholder="夜間38.5℃以上→血培2セット" enterkeyhint="done" onkeydown="if(event.key==='Enter'){addContingency('${caseObj.id}')}">
-      <button class="btn btn-ghost" onclick="addContingency('${caseObj.id}')">追加</button>
     </div>
   `;
 }
@@ -1754,6 +1733,10 @@ function renderTodoLike(caseObj, day, kind){
   }[kind];
   const items = day[config.key];
   return `
+    <div class="add-row">
+      <input id="${kind}Input-${day.date}" class="input" placeholder="${config.input}" enterkeyhint="next" onkeydown="if(event.key==='Enter'){addTextItem('${caseObj.id}','${kind}','${day.date}')}">
+      <button class="btn btn-ghost" onclick="addTextItem('${caseObj.id}','${kind}','${day.date}')">追加</button>
+    </div>
     <div class="list">
       ${items.length ? items.map((item) => `
         <div class="row-item">
@@ -1764,10 +1747,6 @@ function renderTodoLike(caseObj, day, kind){
           <button class="row-del" onclick="deleteTextItem('${caseObj.id}','${day.date}','${kind}','${item.id}')" aria-label="削除">×</button>
         </div>
       `).join("") : `<div class="empty">まだありません。</div>`}
-    </div>
-    <div class="add-row">
-      <input id="${kind}Input-${day.date}" class="input" placeholder="${config.input}" enterkeyhint="done" onkeydown="if(event.key==='Enter'){addTextItem('${caseObj.id}','${kind}','${day.date}')}">
-      <button class="btn btn-ghost" onclick="addTextItem('${caseObj.id}','${kind}','${day.date}')">追加</button>
     </div>
   `;
 }
@@ -1911,26 +1890,20 @@ function showEventInfo(eventId){
 function renderTrash(){
   const items = trashCases().sort((a,b) => (b.deletedAt || "").localeCompare(a.deletedAt || ""));
   return `
-    <section class="hero">
-      <div class="hero-top">
-        <div>
-          <div class="eyebrow">Trash</div>
-          <h1 class="page">ゴミ箱</h1>
-          <div class="sub">削除済み症例は30日で自動 purge。復元か完全削除のみ。</div>
-        </div>
-        <button class="btn btn-ghost" onclick="go('list')">一覧へ戻る</button>
+    <div class="page-head">
+      <div>
+        <div class="page-title">ゴミ箱</div>
+        <div class="panel-sub">削除済み症例は30日で自動削除。復元か完全削除のみ。</div>
       </div>
-    </section>
+      <button class="compact-btn" onclick="go('list')">← 一覧</button>
+    </div>
     ${items.length ? `<div class="case-grid">${items.map((caseObj) => `
-      <article class="case-card">
-        <div class="case-top">
-          <div>
-            <div class="case-label">${esc(LOGIC.formatLabel(caseObj) || "未設定")}</div>
-            <div class="case-cc">${esc(caseObj.cc || "一言未入力")}</div>
-          </div>
-          <div class="badge trash">削除 ${esc((caseObj.deletedAt || "").slice(0,10))}</div>
+      <article class="case-row">
+        <div class="case-row-top">
+          <div class="case-label">${esc(LOGIC.formatLabel(caseObj) || "未設定")}</div>
+          <span class="flag trash">削除 ${esc((caseObj.deletedAt || "").slice(0,10))}</span>
         </div>
-        <div class="inline-actions" style="margin-top:14px">
+        <div class="inline-actions" style="margin-top:10px">
           <button class="btn btn-ghost" onclick="restoreCase('${caseObj.id}')">復元</button>
           <button class="btn btn-danger" onclick="permanentlyDeleteCase('${caseObj.id}')">完全削除</button>
         </div>

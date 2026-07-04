@@ -68,8 +68,8 @@ vm.runInContext(mainSrc, sandbox);
   `, sandbox);
 
   const checks = [
-    ["renderListV21()", ["今日の症例カード", "新規症例"]],
-    ["renderCaseV21()", ["今日やる", "待ち", "もしもプラン", "ひっかかり", "問題リスト", "tabs-bar"]],
+    ["renderListV21()", ["新規症例", "入院中", "case-row", "ゴミ箱"]],
+    ["renderCaseV21()", ["今日やる", "待ち", "もしもプラン", "引っかかり", "問題リスト", "tabs-bar"]],
     ["(VIEW.tab='log', renderCaseV21())", ["過去ログ", "todoInput-" + JSON.stringify(new Date().toISOString().slice(0,10)).slice(1, 11)]],
     ["(VIEW.tab='timeline', renderCaseV21())", ["経過表", "band-inj", "tl-legend", "開始"]],
     ["renderTrash()", ["ゴミ箱"]]
@@ -82,12 +82,27 @@ vm.runInContext(mainSrc, sandbox);
     }
   }
 
-  // 今日ビューの並び: 今日やる → 待ち → もしもプラン → ひっかかり → 問題リスト
+  // 今日ビューの並び: 今日やる → 待ち → もしもプラン → 引っかかり → 問題リスト
   vm.runInContext("VIEW.tab='today'", sandbox);
   const todayHtml = vm.runInContext("renderCaseV21()", sandbox);
-  const order = ["今日やる", "待ち", "もしもプラン", "ひっかかり", "問題リスト"].map(s => todayHtml.indexOf("<h2>" + s + "</h2>"));
+  const order = ["今日やる", "待ち", "もしもプラン", "引っかかり", "問題リスト"].map(s => todayHtml.indexOf("<h2>" + s + "</h2>"));
   if (order.some(i => i < 0) || order.some((v, i) => i > 0 && v < order[i - 1])) {
     console.error("NG: 今日ビューのパネル並びが仕様と違う: " + order.join(",")); process.exit(1);
+  }
+
+  // v5: 一覧の重症度順ソート（不安定 → 要注意）
+  vm.runInContext(`
+    var c2 = LOGIC.ensureCaseShape({ ageBand:"70代", sex:"F", cc:"心不全", admittedAt:"${today}", severity:"unstable",
+      days:[{date:"${today}", todos:[], waits:[], hooks:[]}] });
+    DB.cases.push(c2);
+  `, sandbox);
+  const listHtml = vm.runInContext("VIEW={name:'list',caseId:null,tab:'today',filter:'active'}; renderListV21()", sandbox);
+  if (listHtml.indexOf("心不全") < 0 || listHtml.indexOf("心不全") > listHtml.indexOf("誤嚥性肺炎")) {
+    console.error("NG: 一覧が重症度順（不安定が先頭）になっていない"); process.exit(1);
+  }
+  // v5: 装飾撤去の確認（ヒーロー・英語飾りラベルが無い）
+  for (const banned of ["hero", "eyebrow", "today-first", "Open Todos"]) {
+    if (listHtml.includes(banned)) { console.error("NG: 一覧に撤去済み要素「" + banned + "」が残存"); process.exit(1); }
   }
 
   // render() 本体もDOMスタブ上で例外なく通るか
