@@ -155,4 +155,15 @@ const dis3 = L.buildDischargeExport(c3);
 if (dis3.includes("- 収集:")) { console.error("NG: 退院書き出しに収集行が残存"); process.exit(1); }
 console.log("v3 (collect廃止 / 旧データ後方互換): OK");
 
+// 9) v7: ゲーミフィケーション純ロジック（ストリーク・stats剪定）
+if (L.prevDateISO("2026-07-01") !== "2026-06-30") { console.error("NG: prevDateISO が前日を返さない"); process.exit(1); }
+if (L.prevDateISO("2026-01-01") !== "2025-12-31") { console.error("NG: prevDateISO の年跨ぎ"); process.exit(1); }
+if (L.computeStreak(["2026-07-02", "2026-07-03", "2026-07-04"], "2026-07-04") !== 3) { console.error("NG: streak 連続3日"); process.exit(1); }
+if (L.computeStreak(["2026-07-02", "2026-07-03"], "2026-07-04") !== 2) { console.error("NG: streak 今日未実施は昨日から数える"); process.exit(1); }
+if (L.computeStreak(["2026-07-01", "2026-07-03"], "2026-07-04") !== 1) { console.error("NG: streak 途切れ"); process.exit(1); }
+if (L.computeStreak([], "2026-07-04") !== 0) { console.error("NG: streak 空"); process.exit(1); }
+const pruned = L.pruneStatsDays({ "2026-01-01": { exported: true }, "2026-07-01": { exported: true }, "bad-key": {} }, "2026-07-04", 90);
+if (pruned["2026-01-01"] || !pruned["2026-07-01"] || pruned["bad-key"]) { console.error("NG: pruneStatsDays の剪定が仕様と違う"); process.exit(1); }
+console.log("v7 (prevDateISO / computeStreak / pruneStatsDays): OK");
+
 console.log("ALL TESTS PASSED");

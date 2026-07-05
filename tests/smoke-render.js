@@ -70,8 +70,8 @@ vm.runInContext(mainSrc, sandbox);
   `, sandbox);
 
   const checks = [
-    ["renderListV21()", ["新規症例", "入院中", "case-row", "Trash", "theme-seg"]],
-    ["renderCaseV21()", ["Problem List", "To Do", "Waiting", "Contingency Plan", "Hooks", "tabs-bar", "症例ラベル", "入院日", "updateCaseLabel"]],
+    ["renderListV21()", ["新規症例", "入院中", "case-row", "Trash", "theme-seg", "Export 連続", "累計", "dot-untouched", "progress-row"]],
+    ["renderCaseV21()", ["Problem List", "To Do", "Waiting", "Contingency Plan", "Hooks", "tabs-bar", "症例ラベル", "入院日", "updateCaseLabel", "today-progress"]],
     ["(VIEW.tab='log', renderCaseV21())", ["Log", "todoInput-" + JSON.stringify(new Date().toISOString().slice(0,10)).slice(1, 11)]],
     ["(VIEW.tab='timeline', renderCaseV21())", ["Timeline", "band-inj", "tl-legend", "開始"]],
     ["renderTrash()", ["Trash"]]
@@ -114,6 +114,27 @@ vm.runInContext(mainSrc, sandbox);
   vm.runInContext("setTheme('auto')", sandbox);
   if (sandbox.document.documentElement.dataset.theme !== "light") {
     console.error("NG: auto テーマの解決が light にならない（matchMedia 無し環境）"); process.exit(1);
+  }
+
+  // v7: タッチ記録は casebook:stats（別キー）に保存され、未更新ドットが消える
+  vm.runInContext("markCaseTouched(c.id)", sandbox);
+  const statsRaw = sandbox.localStorage.getItem("casebook:stats");
+  if (!statsRaw || !statsRaw.includes(today)) {
+    console.error("NG: markCaseTouched が casebook:stats に保存されない"); process.exit(1);
+  }
+  if (sandbox.localStorage.getItem("casebook:v2") && sandbox.localStorage.getItem("casebook:v2").includes("touched")) {
+    console.error("NG: タッチ記録が casebook:v2 に混入"); process.exit(1);
+  }
+  const listTouched = vm.runInContext("VIEW={name:'list',caseId:null,tab:'today',filter:'active'}; renderListV21()", sandbox);
+  if (listTouched.includes("dot-untouched")) {
+    console.error("NG: タッチ済み症例に未更新ドットが残る"); process.exit(1);
+  }
+
+  // v7: Export 記録でストリークが 1 になり、14日ドット表に ● が出る
+  vm.runInContext("markExportedToday()", sandbox);
+  const listExported = vm.runInContext("renderListV21()", sandbox);
+  if (!listExported.includes("Export 連続 1 日") || !listExported.includes("●")) {
+    console.error("NG: Export ストリークが一覧に反映されない"); process.exit(1);
   }
 
   // v5: 一覧の重症度順ソート（不安定 → 要注意）

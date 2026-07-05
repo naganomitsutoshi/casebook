@@ -1,5 +1,5 @@
 ﻿<!DOCTYPE html>
-<!-- Casebook v6.1: local-only inpatient tracker. v6 per on-device QA feedback: calendar-range timeline (future dates; fixes events not appearing), selectable theme (auto/light/dark, grayscale dark), English section names, Problem List first, add-rows at panel bottom, everything editable after creation. v6.1: export Markdown headings in English (co-revised with the /casebook Vault skill; old Japanese headings still accepted there). Data model / logic / storage key unchanged. Implemented directly by Claude (Fable 5), no Codex. -->
+<!-- Casebook v7: local-only inpatient tracker. v7: gamified input nudges (record/learning behavior only, never patient care) — today progress bars, untouched-case dots, export streak + 14-day dot row, evening in-app nudge, random completion message, cumulative counters. Stats in separate key casebook:stats (dates/counts only, no PII). v6.1: export Markdown headings in English (co-revised with the /casebook Vault skill). v6: calendar-range timeline, selectable grayscale dark theme, English section names, edit-everything. Storage key casebook:v2 unchanged. Implemented directly by Claude (Fable 5), no Codex. -->
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
@@ -170,6 +170,12 @@
     min-height:44px;display:inline-flex;align-items:center;gap:4px;
   }
   .theme-seg{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.progress{flex:1;height:5px;border-radius:3px;background:var(--line-soft);overflow:hidden;min-width:80px}
+.progress i{display:block;height:100%;background:var(--accent);border-radius:3px}
+.progress-row,.today-progress{display:flex;align-items:center;gap:10px;margin:8px 0}
+.dot-untouched{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--warn);margin-right:8px;vertical-align:1px}
+.nudge{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 12px;margin-bottom:10px;border:1px solid var(--warn-line);background:var(--warn-soft);border-radius:var(--r-m);font-size:13px}
+.dots{letter-spacing:2px;color:var(--ink-soft);font-size:11px}
 
   .case-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
   .case-row{
@@ -806,6 +812,32 @@ function logicFactory(){
     return lines.join("\n");
   }
 
+  function prevDateISO(iso){
+    var d = new Date(iso + "T12:00:00");
+    d.setDate(d.getDate() - 1);
+    return d.toISOString().slice(0, 10);
+  }
+
+  function computeStreak(exportedDates, today){
+    var set = {};
+    (exportedDates || []).forEach(function(date){ set[date] = true; });
+    var cur = set[today] ? today : prevDateISO(today);
+    var n = 0;
+    while(set[cur]){ n += 1; cur = prevDateISO(cur); }
+    return n;
+  }
+
+  function pruneStatsDays(days, today, keepDays){
+    var d = new Date(today + "T12:00:00");
+    d.setDate(d.getDate() - (keepDays || 90));
+    var cutoff = d.toISOString().slice(0, 10);
+    var out = {};
+    Object.keys(days || {}).forEach(function(date){
+      if(/^\d{4}-\d{2}-\d{2}$/.test(date) && date >= cutoff){ out[date] = days[date]; }
+    });
+    return out;
+  }
+
   return {
     SEVERITY_LABELS:SEVERITY_LABELS,
     MED_ROUTE_LABELS:MED_ROUTE_LABELS,
@@ -826,7 +858,10 @@ function logicFactory(){
     routineLabels:routineLabels,
     dayNumber:dayNumber,
     buildDailyExport:buildDailyExport,
-    buildDischargeExport:buildDischargeExport
+    buildDischargeExport:buildDischargeExport,
+    prevDateISO:prevDateISO,
+    computeStreak:computeStreak,
+    pruneStatsDays:pruneStatsDays
   };
 }
 var LOGIC = logicFactory();
@@ -970,6 +1005,75 @@ if(DARK_MQ && DARK_MQ.addEventListener){
   DARK_MQ.addEventListener("change", () => { if(THEME === "auto"){ applyTheme(); } });
 }
 applyTheme();
+
+// v7 ゲーミフィケーション統計（記録・学習行動のみ。患者情報は一切含まない）
+// 保存キーは casebook:v2 と別の casebook:stats（テーマと同方式）
+const STATS_KEY = "casebook:stats";
+let STATS = { days:{}, totals:{ recordDays:0 } };
+try {
+  const rawStats = JSON.parse(localStorage.getItem(STATS_KEY) || "null");
+  if(rawStats && typeof rawStats === "object" && rawStats.days){
+    STATS = { days:rawStats.days, totals:Object.assign({ recordDays:0 }, rawStats.totals) };
+  }
+} catch(e) {}
+
+function saveStats(){
+  STATS.days = LOGIC.pruneStatsDays(STATS.days, todayISO(), 90);
+  try { localStorage.setItem(STATS_KEY, JSON.stringify(STATS)); } catch(e) {}
+}
+
+function statsDay(date){
+  if(!STATS.days[date]){
+    STATS.days[date] = { touched:[], exported:false };
+    STATS.totals.recordDays = (STATS.totals.recordDays || 0) + 1;
+  }
+  return STATS.days[date];
+}
+
+function markCaseTouched(caseId){
+  if(!caseId){ return; }
+  const d = statsDay(todayISO());
+  if(d.touched.indexOf(caseId) === -1){ d.touched.push(caseId); saveStats(); }
+}
+
+function markExportedToday(){
+  statsDay(todayISO()).exported = true;
+  saveStats();
+}
+
+function touchedToday(caseId){
+  const d = STATS.days[todayISO()];
+  return !!(d && d.touched.indexOf(caseId) !== -1);
+}
+
+function exportedOn(date){
+  const d = STATS.days[date];
+  return !!(d && d.exported);
+}
+
+function exportStreak(){
+  const dates = Object.keys(STATS.days).filter(exportedOn);
+  return LOGIC.computeStreak(dates, todayISO());
+}
+
+function exportDotRow(){
+  const cells = [];
+  let cur = todayISO();
+  for(let i = 0; i < 14; i += 1){
+    cells.unshift(exportedOn(cur) ? "●" : "○");
+    cur = LOGIC.prevDateISO(cur);
+  }
+  return cells.join("");
+}
+
+const EXPORT_MESSAGES = [
+  "今日も一巡、おつかれさまです",
+  "記録が資産になっていきます",
+  "あとは /casebook に任せましょう",
+  "今日の分は今日のうちに。良い習慣です",
+  "夜のループ、閉じました"
+];
+
 let LAST_SAVE_AT = null;
 let saveTimer = null;
 let toastTimer = null;
@@ -1047,12 +1151,19 @@ async function saveNow(options = {}){
   return SAVE_OK;
 }
 
-const queueSave = debounce(function(){ saveNow(); }, 360);
+const queueSaveInner = debounce(function(){ saveNow(); }, 360);
+
+function noteTouch(){
+  if(VIEW && VIEW.name === "case" && VIEW.caseId){ markCaseTouched(VIEW.caseId); }
+}
+
+function queueSave(){ noteTouch(); queueSaveInner(); }
 
 function persist(options = {}){
+  if(options.touch !== false){ noteTouch(); }
   if(options.render !== false){ render(); }
   if(options.immediate){ saveNow({ toast:options.toast }); }
-  else { queueSave(); }
+  else { queueSaveInner(); }
 }
 
 function renderSaveOnly(){
@@ -1511,10 +1622,10 @@ async function doDeletePhoto(caseId, photoId){
   persist();
 }
 
-function exportText(text, after){
+function exportText(text, after, doneMsg){
   navigator.clipboard.writeText(text).then(() => {
     if(after){ after(); }
-    toast("クリップボードへコピーしました");
+    toast(doneMsg || "クリップボードへコピーしました");
   }).catch(() => {
     showModal(`
       <h3>コピーできませんでした</h3>
@@ -1530,10 +1641,12 @@ function exportText(text, after){
 function copyDailyExport(){
   const text = LOGIC.buildDailyExport(DB, todayISO());
   const stamp = new Date().toISOString();
+  const msg = EXPORT_MESSAGES[Math.floor(Math.random() * EXPORT_MESSAGES.length)];
   exportText(text, () => {
     activeCases().forEach((c) => { c.lastExportedAt = stamp; });
+    markExportedToday();
     saveNow();
-  });
+  }, `コピーしました — ${msg}（連続 ${exportStreak() + (exportedOn(todayISO()) ? 0 : 1)} 日）`);
 }
 
 function copyDischargeExport(caseId){
@@ -1584,7 +1697,11 @@ function renderListV21(){
   const active = activeCases();
   const totalTodos = active.reduce((sum, c) => sum + caseStats(c).todoOpen, 0);
   const totalWaits = active.reduce((sum, c) => sum + caseStats(c).waitOpen, 0);
+  const totalDone = active.reduce((sum, c) => sum + currentDay(c).todos.filter((t) => t.done).length, 0);
+  const totalAll = totalDone + totalTodos;
+  const showNudge = active.length > 0 && new Date().getHours() >= 17 && !exportedOn(todayISO());
   return `
+    ${showNudge ? `<div class="nudge"><span>今日の Export がまだです</span><button class="btn btn-ghost" onclick="copyDailyExport()">Export</button></div>` : ""}
     <div class="toolbar">
       <button class="btn btn-primary" onclick="newCaseModal()">新規症例</button>
       <button class="chip ${VIEW.filter === "active" ? "on" : ""}" onclick="setFilter('active')">入院中</button>
@@ -1592,10 +1709,18 @@ function renderListV21(){
       <button class="chip ${VIEW.filter === "all" ? "on" : ""}" onclick="setFilter('all')">すべて</button>
     </div>
     <div class="list-note">入院中 ${active.length}件 ／ To Do 残 ${totalTodos} ／ Waiting ${totalWaits}</div>
+    ${totalAll ? `<div class="progress-row"><div class="progress"><i style="width:${Math.round(totalDone / totalAll * 100)}%"></i></div><span class="panel-sub mono">To Do ${totalDone}/${totalAll}</span></div>` : ""}
     ${items.length ? `<div class="case-grid">${items.map(renderCaseCardV21).join("")}</div>` : `<div class="empty">表示できる症例がありません。</div>`}
     <div class="list-foot">
       <button class="linklike" onclick="go('trash')">Trash（<span data-count="trash">0</span>）</button>
       <span class="panel-sub" data-save-meta></span>
+    </div>
+    <div class="list-foot">
+      <span class="panel-sub">Export 連続 ${exportStreak()} 日</span>
+      <span class="dots mono" title="直近14日の Export">${exportDotRow()}</span>
+    </div>
+    <div class="list-foot">
+      <span class="panel-sub">累計 ${DB.cases.filter((c) => !c.deletedAt).length} 症例 ・ 記録 ${STATS.totals.recordDays || 0} 日</span>
     </div>
     <div class="list-foot">
       <span class="panel-sub">テーマ</span>
@@ -1615,7 +1740,7 @@ function renderCaseCardV21(caseObj){
   return `
     <article class="case-row sev-${sev || "none"}" onclick="go('case','${caseObj.id}')">
       <div class="case-row-top">
-        <div class="case-label">${esc(LOGIC.formatLabel(caseObj) || "未設定")}</div>
+        <div class="case-label">${caseObj.status === "active" && !touchedToday(caseObj.id) ? `<span class="dot-untouched" title="今日未更新"></span>` : ""}${esc(LOGIC.formatLabel(caseObj) || "未設定")}</div>
         <div class="case-day mono">病日 ${stats.dayNumber}</div>
       </div>
       ${caseObj.patientSummary ? `<div class="case-sum">${esc(caseObj.patientSummary)}</div>` : ""}
@@ -1711,7 +1836,10 @@ function renderCaseV21(){
 
 function renderTodayTabV21(caseObj, day){
   const admitExpanded = caseObj.admittedAt === todayISO();
+  const todoDone = day.todos.filter((t) => t.done).length;
+  const todoAll = day.todos.length;
   return `
+    ${todoAll ? `<div class="today-progress"><div class="progress"><i style="width:${Math.round(todoDone / todoAll * 100)}%"></i></div><span class="panel-sub mono">To Do ${todoDone}/${todoAll}</span></div>` : ""}
     <section class="shell" style="margin-top:14px">
       <div class="stack">
         <section class="panel">
@@ -2133,7 +2261,7 @@ async function boot(){
           if(JSON.stringify(caseObj.days) !== before){ changed = true; }
         }
       });
-      if(changed){ persist(); }
+      if(changed){ persist({ touch:false }); }
     }
   });
 }
