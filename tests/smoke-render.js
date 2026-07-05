@@ -20,9 +20,11 @@ function makeEl(){
 const els = {};
 const documentStub = {
   getElementById(id){ if(!els[id]){ els[id] = makeEl(); } return els[id]; },
+  querySelector(){ return null; },
   querySelectorAll(){ return []; },
   createElement(){ return makeEl(); },
   addEventListener(){},
+  documentElement: makeEl(),
   visibilityState: "visible"
 };
 const sandbox = {
@@ -68,11 +70,11 @@ vm.runInContext(mainSrc, sandbox);
   `, sandbox);
 
   const checks = [
-    ["renderListV21()", ["新規症例", "入院中", "case-row", "ゴミ箱"]],
-    ["renderCaseV21()", ["今日やる", "待ち", "もしもプラン", "引っかかり", "問題リスト", "tabs-bar"]],
-    ["(VIEW.tab='log', renderCaseV21())", ["過去ログ", "todoInput-" + JSON.stringify(new Date().toISOString().slice(0,10)).slice(1, 11)]],
-    ["(VIEW.tab='timeline', renderCaseV21())", ["経過表", "band-inj", "tl-legend", "開始"]],
-    ["renderTrash()", ["ゴミ箱"]]
+    ["renderListV21()", ["新規症例", "入院中", "case-row", "Trash", "theme-seg"]],
+    ["renderCaseV21()", ["Problem List", "To Do", "Waiting", "Contingency Plan", "Hooks", "tabs-bar", "症例ラベル", "入院日", "updateCaseLabel"]],
+    ["(VIEW.tab='log', renderCaseV21())", ["Log", "todoInput-" + JSON.stringify(new Date().toISOString().slice(0,10)).slice(1, 11)]],
+    ["(VIEW.tab='timeline', renderCaseV21())", ["Timeline", "band-inj", "tl-legend", "開始"]],
+    ["renderTrash()", ["Trash"]]
   ];
   for (const [expr, needles] of checks) {
     const out = vm.runInContext(expr, sandbox);
@@ -82,12 +84,36 @@ vm.runInContext(mainSrc, sandbox);
     }
   }
 
-  // 今日ビューの並び: 今日やる → 待ち → もしもプラン → 引っかかり → 問題リスト
+  // v6: 今日ビューの並び: Problem List → To Do → Waiting → Contingency Plan → Hooks
   vm.runInContext("VIEW.tab='today'", sandbox);
   const todayHtml = vm.runInContext("renderCaseV21()", sandbox);
-  const order = ["今日やる", "待ち", "もしもプラン", "引っかかり", "問題リスト"].map(s => todayHtml.indexOf("<h2>" + s + "</h2>"));
+  const order = ["Problem List", "To Do", "Waiting", "Contingency Plan", "Hooks"].map(s => todayHtml.indexOf("<h2>" + s + "</h2>"));
   if (order.some(i => i < 0) || order.some((v, i) => i > 0 && v < order[i - 1])) {
     console.error("NG: 今日ビューのパネル並びが仕様と違う: " + order.join(",")); process.exit(1);
+  }
+
+  // v6: 追加欄は各パネルの一番下（list が add-row より先に出る）
+  const todoBlock = vm.runInContext("renderTodoLike(c, c.days[0], 'todo')", sandbox);
+  if (todoBlock.indexOf('class="list"') < 0 || todoBlock.indexOf('class="list"') > todoBlock.indexOf("add-row")) {
+    console.error("NG: 追加欄がパネル最下部になっていない"); process.exit(1);
+  }
+
+  // v6: 未来日付イベントが経過表に列として出る（イベント反映バグの回帰テスト）
+  const futureDate = new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10);
+  vm.runInContext(`c.events.push({id:"e2", date:"${futureDate}", type:"surgery", title:"手術予定", note:""})`, sandbox);
+  const tlHtml = vm.runInContext("(VIEW.tab='timeline', renderCaseV21())", sandbox);
+  if (!tlHtml.includes("future") || !tlHtml.includes("手術予定") || !tlHtml.includes(futureDate.slice(5).replace("-", "/"))) {
+    console.error("NG: 未来日付のイベントが経過表に反映されない"); process.exit(1);
+  }
+
+  // v6: テーマ切替（casebook:theme に保存・casebook:v2 とは別キー）
+  vm.runInContext("setTheme('dark')", sandbox);
+  if (sandbox.document.documentElement.dataset.theme !== "dark" || sandbox.localStorage.getItem("casebook:theme") !== "dark") {
+    console.error("NG: setTheme('dark') が反映されない"); process.exit(1);
+  }
+  vm.runInContext("setTheme('auto')", sandbox);
+  if (sandbox.document.documentElement.dataset.theme !== "light") {
+    console.error("NG: auto テーマの解決が light にならない（matchMedia 無し環境）"); process.exit(1);
   }
 
   // v5: 一覧の重症度順ソート（不安定 → 要注意）

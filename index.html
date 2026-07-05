@@ -1,17 +1,16 @@
 ﻿<!DOCTYPE html>
-<!-- Casebook v5: local-only inpatient tracker. v5 strips the dashboard/LP styling for a flat tool-first UI (compact case rows, severity sort, collapsed case editor) per research + QA review; data model and logic unchanged. Implemented directly by Claude (Fable 5), no Codex. -->
+<!-- Casebook v6: local-only inpatient tracker. v6 per on-device QA feedback: calendar-range timeline (future dates; fixes events not appearing), selectable theme (auto/light/dark, grayscale dark), English section names, Problem List first, add-rows at panel bottom, everything editable after creation. Data model / logic / storage key unchanged. Implemented directly by Claude (Fable 5), no Codex. -->
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<meta name="theme-color" content="#f8faf8" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#121a15" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f3f5f3">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <title>Casebook</title>
 <style>
   :root{
-    color-scheme:light dark;
+    color-scheme:light;
     --r-s:8px;
     --r-m:12px;
     --r-l:16px;
@@ -40,33 +39,33 @@
     --info:#38618c;
     --info-soft:#e6eff9;
   }
-  @media(prefers-color-scheme:dark){
-    :root{
-      --paper:#131a16;
-      --card:#1b241f;
-      --surface-2:#212b25;
-      --field:#171f1a;
-      --ink:#e5ece7;
-      --ink-soft:#a9b7ae;
-      --ink-faint:#8b9a90;
-      --on-accent:#0d1410;
-      --line:#2f3a33;
-      --line-soft:#28322b;
-      --accent:#57ab93;
-      --accent-deep:#7cc4ae;
-      --accent-soft:#1e352d;
-      --accent-line:#2f5548;
-      --warn:#d8a24f;
-      --warn-soft:#352a15;
-      --warn-line:#5c4720;
-      --danger:#dd8080;
-      --danger-soft:#3a2121;
-      --danger-line:#5c3232;
-      --done:#84b687;
-      --done-soft:#20301f;
-      --info:#8db4dd;
-      --info-soft:#1c2a3a;
-    }
+  /* ダークはグレースケール基調（面・線・文字は無彩色、強調色のみ色を残す） */
+  :root[data-theme="dark"]{
+    color-scheme:dark;
+    --paper:#151515;
+    --card:#1e1e1e;
+    --surface-2:#262626;
+    --field:#1a1a1a;
+    --ink:#e9e9e9;
+    --ink-soft:#b4b4b4;
+    --ink-faint:#8e8e8e;
+    --on-accent:#111111;
+    --line:#3a3a3a;
+    --line-soft:#2d2d2d;
+    --accent:#57ab93;
+    --accent-deep:#7cc4ae;
+    --accent-soft:#22322d;
+    --accent-line:#3c5a50;
+    --warn:#d8a24f;
+    --warn-soft:#332b1c;
+    --warn-line:#5c4b26;
+    --danger:#dd8080;
+    --danger-soft:#382323;
+    --danger-line:#5c3434;
+    --done:#84b687;
+    --done-soft:#233026;
+    --info:#8db4dd;
+    --info-soft:#202934;
   }
   *{box-sizing:border-box;margin:0;padding:0}
   html{-webkit-text-size-adjust:100%}
@@ -170,6 +169,7 @@
     color:var(--ink-soft);font-size:13px;font-weight:700;
     min-height:44px;display:inline-flex;align-items:center;gap:4px;
   }
+  .theme-seg{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
 
   .case-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
   .case-row{
@@ -360,6 +360,7 @@
   }
   .timeline th.today,.timeline td.today{background:var(--accent-soft)}
   .timeline th.today{box-shadow:inset 0 -3px 0 var(--accent)}
+  .timeline th.future,.timeline td.future{opacity:.62}
   .timeline td.band-oral{background:var(--info-soft)}
   .timeline td.band-inj{background:var(--warn-soft)}
   .band-tag{display:block;font-size:10px;font-weight:800;text-align:center;color:var(--ink-soft);white-space:nowrap}
@@ -436,11 +437,11 @@
       <div class="spacer"></div>
       <div class="header-actions">
         <button class="pill-btn" onclick="copyDailyExport()">
-          今日の書き出し
+          Export
           <span class="count-badge" data-count="export">0</span>
         </button>
         <button class="pill-btn" onclick="go('trash')">
-          ゴミ箱
+          Trash
           <span class="count-badge" data-count="trash">0</span>
         </button>
       </div>
@@ -451,9 +452,9 @@
 
   <nav class="bottombar">
     <div class="bottombar-in">
-      <button class="bnav" data-nav="list" onclick="go('list')"><span class="ico">▤</span>一覧</button>
-      <button class="bnav" onclick="newCaseModal()"><span class="ico">＋</span>新規</button>
-      <button class="bnav" onclick="copyDailyExport()"><span class="ico">⧉</span>書き出し<span class="count-badge" data-count="export">0</span></button>
+      <button class="bnav" data-nav="list" onclick="go('list')"><span class="ico">▤</span>List</button>
+      <button class="bnav" onclick="newCaseModal()"><span class="ico">＋</span>New</button>
+      <button class="bnav" onclick="copyDailyExport()"><span class="ico">⧉</span>Export<span class="count-badge" data-count="export">0</span></button>
     </div>
   </nav>
   <div id="modalMount"></div>
@@ -938,6 +939,37 @@ const Photos = {
 let DB = Store.empty();
 let VIEW = { name:"list", caseId:null, tab:"today", filter:"active" };
 let SAVE_OK = true;
+
+// テーマ（auto/light/dark）。設定は保存キーと別の localStorage キーに置く（casebook:v2 は不変）
+const THEME_KEY = "casebook:theme";
+let THEME = "auto";
+try { THEME = localStorage.getItem(THEME_KEY) || "auto"; } catch(e) {}
+if(!["auto","light","dark"].includes(THEME)){ THEME = "auto"; }
+const DARK_MQ = (typeof window !== "undefined" && window.matchMedia) ? window.matchMedia("(prefers-color-scheme: dark)") : null;
+
+function resolvedTheme(){
+  if(THEME === "auto"){ return DARK_MQ && DARK_MQ.matches ? "dark" : "light"; }
+  return THEME;
+}
+
+function applyTheme(){
+  const mode = resolvedTheme();
+  document.documentElement.dataset.theme = mode;
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if(meta){ meta.content = mode === "dark" ? "#151515" : "#f3f5f3"; }
+}
+
+function setTheme(mode){
+  THEME = mode;
+  try { localStorage.setItem(THEME_KEY, mode); } catch(e) {}
+  applyTheme();
+  render();
+}
+
+if(DARK_MQ && DARK_MQ.addEventListener){
+  DARK_MQ.addEventListener("change", () => { if(THEME === "auto"){ applyTheme(); } });
+}
+applyTheme();
 let LAST_SAVE_AT = null;
 let saveTimer = null;
 let toastTimer = null;
@@ -1072,6 +1104,8 @@ function confirmAction(title, body, confirmJs, confirmLabel = "実行"){
   );
 }
 
+const AGE_BANDS = ["10代","20代","30代","40代","50代","60代","70代","80代","90代以上"];
+
 function newCaseModal(){
   showModal(`
     <h3>新規症例</h3>
@@ -1081,7 +1115,7 @@ function newCaseModal(){
         <label class="panel-sub">年代</label>
         <select id="ncAge" class="select">
           <option value=""></option>
-          ${["10代","20代","30代","40代","50代","60代","70代","80代","90代以上"].map((x) => `<option>${x}</option>`).join("")}
+          ${AGE_BANDS.map((x) => `<option>${x}</option>`).join("")}
         </select>
       </div>
       <div>
@@ -1134,6 +1168,25 @@ function updateCaseText(caseId, path, value){
 
 function updatePatientSummary(caseId, value){
   updateCaseText(caseId, "patientSummary", value);
+}
+
+function updateCaseLabel(caseId, field, value){
+  const caseObj = findCase(caseId);
+  caseObj[field] = value;
+  if(field === "cc"){
+    const title = document.querySelector(".case-head .title");
+    if(title){ title.textContent = LOGIC.formatLabel(caseObj) || "未設定"; }
+    queueSave();
+  } else {
+    persist();
+  }
+}
+
+function updateCaseDate(caseId, field, value){
+  if(!value){ return; }
+  const caseObj = findCase(caseId);
+  caseObj[field] = value;
+  persist();
 }
 
 function setCaseSeverity(caseId, severity){
@@ -1247,6 +1300,41 @@ function createMed(){
   persist();
 }
 
+function editMedModal(medId){
+  const med = currentCase().meds.find((m) => m.id === medId);
+  if(!med){ return; }
+  showModal(`
+    <h3>薬剤を編集</h3>
+    <div class="modal-grid">
+      <input id="emName" class="input" placeholder="薬剤名" value="${esc(med.name)}">
+      <select id="emRoute" class="select">
+        <option value="oral" ${med.route === "oral" ? "selected" : ""}>内服</option>
+        <option value="inj" ${med.route === "inj" ? "selected" : ""}>注射</option>
+      </select>
+      <input id="emStart" class="input" type="date" value="${esc(med.startDate || "")}">
+      <input id="emEnd" class="input" type="date" value="${esc(med.endDate || "")}">
+    </div>
+    <div style="margin-top:10px"><input id="emNote" class="input" placeholder="メモ" value="${esc(med.note || "")}"></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal()">キャンセル</button>
+      <button class="btn btn-primary" onclick="saveMedEdit('${med.id}')">保存</button>
+    </div>
+  `);
+}
+
+function saveMedEdit(medId){
+  const med = currentCase().meds.find((m) => m.id === medId);
+  const name = document.getElementById("emName").value.trim();
+  if(!med || !name){ return; }
+  med.name = name;
+  med.route = document.getElementById("emRoute").value;
+  med.startDate = document.getElementById("emStart").value || todayISO();
+  med.endDate = document.getElementById("emEnd").value || null;
+  med.note = document.getElementById("emNote").value.trim();
+  closeModal();
+  persist();
+}
+
 function deleteMed(medId){
   confirmAction("薬剤を削除", "この薬剤を削除します。", `doDeleteMed('${medId}')`, "削除");
 }
@@ -1269,6 +1357,38 @@ function createEvent(){
     title,
     note:document.getElementById("evNote").value.trim()
   });
+  persist();
+}
+
+function editEventModal(eventId){
+  const eventObj = currentCase().events.find((e) => e.id === eventId);
+  if(!eventObj){ return; }
+  showModal(`
+    <h3>イベントを編集</h3>
+    <div class="modal-grid">
+      <input id="eeDate" class="input" type="date" value="${esc(eventObj.date || "")}">
+      <select id="eeType" class="select">
+        ${["test","surgery","procedure","treatment","other"].map((t) => `<option value="${t}" ${eventObj.type === t ? "selected" : ""}>${esc(LOGIC.EVENT_TYPE_LABELS[t])}</option>`).join("")}
+      </select>
+    </div>
+    <div style="margin-top:10px"><input id="eeTitle" class="input" placeholder="タイトル" value="${esc(eventObj.title)}"></div>
+    <div style="margin-top:10px"><input id="eeNote" class="input" placeholder="メモ" value="${esc(eventObj.note || "")}"></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal()">キャンセル</button>
+      <button class="btn btn-primary" onclick="saveEventEdit('${eventObj.id}')">保存</button>
+    </div>
+  `);
+}
+
+function saveEventEdit(eventId){
+  const eventObj = currentCase().events.find((e) => e.id === eventId);
+  const title = document.getElementById("eeTitle").value.trim();
+  if(!eventObj || !title){ return; }
+  eventObj.date = document.getElementById("eeDate").value || todayISO();
+  eventObj.type = document.getElementById("eeType").value;
+  eventObj.title = title;
+  eventObj.note = document.getElementById("eeNote").value.trim();
+  closeModal();
   persist();
 }
 
@@ -1471,11 +1591,19 @@ function renderListV21(){
       <button class="chip ${VIEW.filter === "discharged" ? "on" : ""}" onclick="setFilter('discharged')">退院</button>
       <button class="chip ${VIEW.filter === "all" ? "on" : ""}" onclick="setFilter('all')">すべて</button>
     </div>
-    <div class="list-note">入院中 ${active.length}件 ／ 今日やる残 ${totalTodos} ／ 待ち ${totalWaits}</div>
+    <div class="list-note">入院中 ${active.length}件 ／ To Do 残 ${totalTodos} ／ Waiting ${totalWaits}</div>
     ${items.length ? `<div class="case-grid">${items.map(renderCaseCardV21).join("")}</div>` : `<div class="empty">表示できる症例がありません。</div>`}
     <div class="list-foot">
-      <button class="linklike" onclick="go('trash')">ゴミ箱（<span data-count="trash">0</span>）</button>
+      <button class="linklike" onclick="go('trash')">Trash（<span data-count="trash">0</span>）</button>
       <span class="panel-sub" data-save-meta></span>
+    </div>
+    <div class="list-foot">
+      <span class="panel-sub">テーマ</span>
+      <div class="theme-seg">
+        <button class="chip ${THEME === "auto" ? "on" : ""}" onclick="setTheme('auto')">Auto</button>
+        <button class="chip ${THEME === "light" ? "on" : ""}" onclick="setTheme('light')">Light</button>
+        <button class="chip ${THEME === "dark" ? "on" : ""}" onclick="setTheme('dark')">Dark</button>
+      </div>
     </div>
   `;
 }
@@ -1494,8 +1622,8 @@ function renderCaseCardV21(caseObj){
       <div class="case-flags">
         ${sev ? `<span class="flag severity-${sev}">${esc(LOGIC.severityLabel(sev))}</span>` : ""}
         ${caseObj.status !== "active" ? `<span class="flag">退院</span>` : ""}
-        ${stats.todoOpen ? `<span class="flag todo">今日やる残 ${stats.todoOpen}</span>` : ""}
-        ${stats.waitOpen ? `<span class="flag wait">待ち ${stats.waitOpen}</span>` : ""}
+        ${stats.todoOpen ? `<span class="flag todo">To Do ${stats.todoOpen}</span>` : ""}
+        ${stats.waitOpen ? `<span class="flag wait">Waiting ${stats.waitOpen}</span>` : ""}
         ${noOpen && caseObj.status === "active" ? `<span class="flag clear">未処理なし</span>` : ""}
       </div>
     </article>
@@ -1530,6 +1658,31 @@ function renderCaseV21(){
           </div>
         </div>
         <div class="${VIEW.caseEdit ? "" : "hide"}" id="caseEditBody">
+          <div class="panel-sub" style="margin-top:12px">症例ラベル（年代・性別・主訴/病名）</div>
+          <div class="modal-grid" style="margin-top:8px">
+            <select class="select" onchange="updateCaseLabel('${caseObj.id}','ageBand',this.value)">
+              <option value="" ${!caseObj.ageBand ? "selected" : ""}></option>
+              ${AGE_BANDS.map((x) => `<option ${caseObj.ageBand === x ? "selected" : ""}>${x}</option>`).join("")}
+            </select>
+            <select class="select" onchange="updateCaseLabel('${caseObj.id}','sex',this.value)">
+              <option value="" ${!caseObj.sex ? "selected" : ""}></option>
+              <option value="M" ${caseObj.sex === "M" ? "selected" : ""}>男性</option>
+              <option value="F" ${caseObj.sex === "F" ? "selected" : ""}>女性</option>
+            </select>
+          </div>
+          <div style="margin-top:8px">
+            <input class="input" placeholder="主訴・病名" value="${esc(caseObj.cc || "")}" oninput="updateCaseLabel('${caseObj.id}','cc',this.value)">
+          </div>
+          <div class="modal-grid" style="margin-top:8px">
+            <div>
+              <label class="panel-sub">入院日</label>
+              <input class="input" type="date" value="${esc(caseObj.admittedAt || "")}" onchange="updateCaseDate('${caseObj.id}','admittedAt',this.value)">
+            </div>
+            ${caseObj.dischargedAt ? `<div>
+              <label class="panel-sub">退院日</label>
+              <input class="input" type="date" value="${esc(caseObj.dischargedAt)}" onchange="updateCaseDate('${caseObj.id}','dischargedAt',this.value)">
+            </div>` : ""}
+          </div>
           <label class="panel-sub" style="display:block;margin-top:12px">患者サマリ（1〜2行・申し送り用）</label>
           <textarea class="textarea" rows="2" placeholder="80代男性、誤嚥性肺炎で入院。抗菌薬治療中、嚥下評価待ち" oninput="updatePatientSummary('${caseObj.id}',this.value)">${esc(caseObj.patientSummary || "")}</textarea>
           <div class="panel-sub" style="margin-top:12px">重症度</div>
@@ -1548,9 +1701,9 @@ function renderCaseV21(){
       </div>
     </section>
     <nav class="tabs-bar">
-      <button class="tab-btn ${tab === "today" ? "on" : ""}" onclick="setTab('today')">今日</button>
-      <button class="tab-btn ${tab === "log" ? "on" : ""}" onclick="setTab('log')">過去ログ</button>
-      <button class="tab-btn ${tab === "timeline" ? "on" : ""}" onclick="setTab('timeline')">経過表</button>
+      <button class="tab-btn ${tab === "today" ? "on" : ""}" onclick="setTab('today')">Today</button>
+      <button class="tab-btn ${tab === "log" ? "on" : ""}" onclick="setTab('log')">Log</button>
+      <button class="tab-btn ${tab === "timeline" ? "on" : ""}" onclick="setTab('timeline')">Timeline</button>
     </nav>
     ${tab === "today" ? renderTodayTabV21(caseObj, day) : tab === "log" ? renderLogTab(caseObj) : renderTimelineTab(caseObj)}
   `;
@@ -1562,35 +1715,7 @@ function renderTodayTabV21(caseObj, day){
     <section class="shell" style="margin-top:14px">
       <div class="stack">
         <section class="panel">
-          <div class="panel-head"><h2>今日やる</h2><div class="panel-sub">未完了は翌日に繰り越し</div></div>
-          <div class="panel-body">
-            ${renderTodoLike(caseObj, day, "todo")}
-          </div>
-        </section>
-
-        <section class="panel">
-          <div class="panel-head"><h2>待ち</h2><div class="panel-sub">未解決は翌日に繰り越し</div></div>
-          <div class="panel-body">
-            ${renderTodoLike(caseObj, day, "wait")}
-          </div>
-        </section>
-
-        <section class="panel">
-          <div class="panel-head"><h2>もしもプラン</h2><div class="panel-sub">もし◯◯なら→◯◯する</div></div>
-          <div class="panel-body">
-            ${renderContingencyList(caseObj)}
-          </div>
-        </section>
-
-        <section class="panel">
-          <div class="panel-head"><h2>引っかかり</h2><div class="panel-sub">学びや違和感のメモ</div></div>
-          <div class="panel-body">
-            ${renderTodoLike(caseObj, day, "hook")}
-          </div>
-        </section>
-
-        <section class="panel">
-          <div class="panel-head"><h2>問題リスト</h2><button class="btn btn-ghost" onclick="addProblem('${caseObj.id}')">追加</button></div>
+          <div class="panel-head"><h2>Problem List</h2><div class="panel-sub">問題リスト</div></div>
           <div class="panel-body list">
             ${caseObj.problems.length ? caseObj.problems.map((problem, index) => `
               <article class="prob-card">
@@ -1609,6 +1734,35 @@ function renderTodayTabV21(caseObj, day){
                 </div>
               </article>
             `).join("") : `<div class="empty">問題を追加してください。</div>`}
+            <div class="inline-actions"><button class="btn btn-ghost" onclick="addProblem('${caseObj.id}')">追加</button></div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><h2>To Do</h2><div class="panel-sub">今日やる・未完了は翌日に繰り越し</div></div>
+          <div class="panel-body">
+            ${renderTodoLike(caseObj, day, "todo")}
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><h2>Waiting</h2><div class="panel-sub">待ち・未解決は翌日に繰り越し</div></div>
+          <div class="panel-body">
+            ${renderTodoLike(caseObj, day, "wait")}
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><h2>Contingency Plan</h2><div class="panel-sub">もし◯◯なら→◯◯する</div></div>
+          <div class="panel-body">
+            ${renderContingencyList(caseObj)}
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><h2>Hooks</h2><div class="panel-sub">引っかかり・学びや違和感のメモ</div></div>
+          <div class="panel-body">
+            ${renderTodoLike(caseObj, day, "hook")}
           </div>
         </section>
       </div>
@@ -1617,8 +1771,8 @@ function renderTodayTabV21(caseObj, day){
         <section class="collapse">
           <div class="collapse-head">
             <div>
-              <h2>入院時記録</h2>
-              <div class="panel-sub">写真とテンプレ節チェックをここで管理</div>
+              <h2>Admission Note</h2>
+              <div class="panel-sub">入院時記録・写真とテンプレ節チェック</div>
             </div>
             <button class="compact-btn" onclick="toggleSection(this,'admissionBody')">${admitExpanded ? "閉じる" : "開く"}</button>
           </div>
@@ -1643,7 +1797,7 @@ function renderTodayTabV21(caseObj, day){
         </section>
 
         <section class="panel">
-          <div class="panel-head"><h2>薬剤</h2><div class="panel-sub">内服 / 注射</div></div>
+          <div class="panel-head"><h2>Medications</h2><div class="panel-sub">薬剤・内服 / 注射</div></div>
           <div class="panel-body">
             <div class="modal-grid">
               <input id="medName" class="input" placeholder="薬剤名">
@@ -1660,7 +1814,7 @@ function renderTodayTabV21(caseObj, day){
         </section>
 
         <section class="panel">
-          <div class="panel-head"><h2>イベント</h2><div class="panel-sub">検査 / 手術 / 処置 / 治療 / その他</div></div>
+          <div class="panel-head"><h2>Events</h2><div class="panel-sub">検査 / 手術 / 処置 / 治療 / その他（未来の予定も可）</div></div>
           <div class="panel-body">
             <div class="modal-grid">
               <input id="evDate" class="input" type="date" value="${todayISO()}">
@@ -1682,8 +1836,8 @@ function renderTodayTabV21(caseObj, day){
         <section class="collapse">
           <div class="collapse-head">
             <div>
-              <h2>退院サマリ</h2>
-              <div class="panel-sub">退院書き出しに反映</div>
+              <h2>Discharge Summary</h2>
+              <div class="panel-sub">退院サマリ・退院書き出しに反映</div>
             </div>
             <button class="compact-btn" onclick="toggleSection(this,'summaryBody')">開く</button>
           </div>
@@ -1709,10 +1863,6 @@ function renderTodayTabV21(caseObj, day){
 
 function renderContingencyList(caseObj){
   return `
-    <div class="add-row">
-      <input id="contingencyInput" class="input" placeholder="夜間38.5℃以上→血培2セット" enterkeyhint="next" onkeydown="if(event.key==='Enter'){addContingency('${caseObj.id}')}">
-      <button class="btn btn-ghost" onclick="addContingency('${caseObj.id}')">追加</button>
-    </div>
     <div class="list">
       ${caseObj.contingency.length ? caseObj.contingency.map((item) => `
         <div class="row-item">
@@ -1721,6 +1871,10 @@ function renderContingencyList(caseObj){
           <button class="row-del" onclick="removeContingency('${caseObj.id}','${item.id}')" aria-label="削除">×</button>
         </div>
       `).join("") : `<div class="empty">まだありません。</div>`}
+    </div>
+    <div class="add-row" style="margin-top:8px">
+      <input id="contingencyInput" class="input" placeholder="夜間38.5℃以上→血培2セット" enterkeyhint="next" onkeydown="if(event.key==='Enter'){addContingency('${caseObj.id}')}">
+      <button class="btn btn-ghost" onclick="addContingency('${caseObj.id}')">追加</button>
     </div>
   `;
 }
@@ -1733,10 +1887,6 @@ function renderTodoLike(caseObj, day, kind){
   }[kind];
   const items = day[config.key];
   return `
-    <div class="add-row">
-      <input id="${kind}Input-${day.date}" class="input" placeholder="${config.input}" enterkeyhint="next" onkeydown="if(event.key==='Enter'){addTextItem('${caseObj.id}','${kind}','${day.date}')}">
-      <button class="btn btn-ghost" onclick="addTextItem('${caseObj.id}','${kind}','${day.date}')">追加</button>
-    </div>
     <div class="list">
       ${items.length ? items.map((item) => `
         <div class="row-item">
@@ -1747,6 +1897,10 @@ function renderTodoLike(caseObj, day, kind){
           <button class="row-del" onclick="deleteTextItem('${caseObj.id}','${day.date}','${kind}','${item.id}')" aria-label="削除">×</button>
         </div>
       `).join("") : `<div class="empty">まだありません。</div>`}
+    </div>
+    <div class="add-row" style="margin-top:8px">
+      <input id="${kind}Input-${day.date}" class="input" placeholder="${config.input}" enterkeyhint="next" onkeydown="if(event.key==='Enter'){addTextItem('${caseObj.id}','${kind}','${day.date}')}">
+      <button class="btn btn-ghost" onclick="addTextItem('${caseObj.id}','${kind}','${day.date}')">追加</button>
     </div>
   `;
 }
@@ -1775,7 +1929,10 @@ function renderMedList(caseObj){
           <div class="line-sub">${esc(LOGIC.MED_ROUTE_LABELS[med.route])} / ${esc(med.startDate)} 〜 ${esc(med.endDate || "継続中")}</div>
           ${med.note ? `<div class="line-sub">${esc(med.note)}</div>` : ""}
         </div>
-        <button class="compact-btn" onclick="deleteMed('${med.id}')">削除</button>
+        <div class="inline-actions">
+          <button class="compact-btn" onclick="editMedModal('${med.id}')">編集</button>
+          <button class="compact-btn" onclick="deleteMed('${med.id}')">削除</button>
+        </div>
       </div>
     </div>
   `).join("");
@@ -1791,7 +1948,10 @@ function renderEventList(caseObj){
           <div class="line-sub">${esc(eventObj.date)} / ${esc(LOGIC.EVENT_TYPE_LABELS[eventObj.type])}</div>
           ${eventObj.note ? `<div class="line-sub">${esc(eventObj.note)}</div>` : ""}
         </div>
-        <button class="compact-btn" onclick="deleteEvent('${eventObj.id}')">削除</button>
+        <div class="inline-actions">
+          <button class="compact-btn" onclick="editEventModal('${eventObj.id}')">編集</button>
+          <button class="compact-btn" onclick="deleteEvent('${eventObj.id}')">削除</button>
+        </div>
       </div>
     </div>
   `).join("");
@@ -1801,7 +1961,7 @@ function renderLogTab(caseObj){
   const days = caseObj.days.slice().sort((a,b) => b.date.localeCompare(a.date));
   return `
     <section class="panel" style="margin-top:14px">
-      <div class="panel-head"><h2>過去ログ</h2><div class="panel-sub">todos / waits / hooks を後から編集できる</div></div>
+      <div class="panel-head"><h2>Log</h2><div class="panel-sub">過去ログ・後から編集できる</div></div>
       <div class="panel-body log-group">
         ${days.length ? days.map((day) => `
           <article class="log-card">
@@ -1809,11 +1969,11 @@ function renderLogTab(caseObj){
               <strong class="mono">${esc(day.date)}</strong>
               <span class="panel-sub">病日 ${LOGIC.dayNumber(caseObj, day.date)}</span>
             </div>
-            <div style="margin-top:14px"><strong>今日やる</strong></div>
+            <div style="margin-top:14px"><strong>To Do</strong></div>
             ${renderTodoLike(caseObj, day, "todo")}
-            <div style="margin-top:14px"><strong>待ち</strong></div>
+            <div style="margin-top:14px"><strong>Waiting</strong></div>
             ${renderTodoLike(caseObj, day, "wait")}
-            <div style="margin-top:14px"><strong>引っかかり</strong></div>
+            <div style="margin-top:14px"><strong>Hooks</strong></div>
             ${renderTodoLike(caseObj, day, "hook")}
           </article>
         `).join("") : `<div class="empty">ログがありません。</div>`}
@@ -1822,45 +1982,69 @@ function renderLogTab(caseObj){
   `;
 }
 
+function nextDateISO(iso){
+  const d = new Date(iso + "T12:00:00");
+  d.setDate(d.getDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
+
+// 経過表の日付列: 入院日 〜 max(今日, イベント日, 薬剤開始/終了日, 退院日)。
+// days レコードに依存しないため、未来のイベント・処方も列に出る（安全上限370列）
+function timelineDates(caseObj){
+  const today = todayISO();
+  const start = caseObj.admittedAt || today;
+  let end = today < start ? start : today;
+  const push = (d) => { if(d && /^\d{4}-\d{2}-\d{2}$/.test(d) && d > end){ end = d; } };
+  caseObj.events.forEach((e) => push(e.date));
+  caseObj.meds.forEach((m) => { push(m.startDate); push(m.endDate); });
+  push(caseObj.dischargedAt);
+  const dates = [];
+  let cur = start;
+  let guard = 0;
+  while(cur <= end && guard < 370){ dates.push(cur); cur = nextDateISO(cur); guard += 1; }
+  return dates.length ? dates : [start];
+}
+
 function renderTimelineTab(caseObj){
-  const days = caseObj.days.slice().sort((a,b) => a.date.localeCompare(b.date));
-  const dates = days.map((d) => d.date);
+  const today = todayISO();
+  const dates = timelineDates(caseObj);
+  const dayCls = (date) => date === today ? "today" : date > today ? "future" : "";
   return `
     <section class="panel" style="margin-top:14px">
-      <div class="panel-head"><h2>経過表</h2><div class="panel-sub">入院日から今日までの簡易タイムライン</div></div>
+      <div class="panel-head"><h2>Timeline</h2><div class="panel-sub">経過表・入院日から最終予定まで（未来の予定は薄く表示）</div></div>
       <div class="panel-body">
         <div class="timeline-wrap">
           <table class="timeline">
             <thead>
               <tr>
                 <th>項目</th>
-                ${dates.map((date) => `<th class="${date === todayISO() ? "today" : ""}"><div class="mono">${esc(date.slice(5).replace("-","/"))}</div></th>`).join("")}
+                ${dates.map((date) => `<th class="${dayCls(date)}"><div class="mono">${esc(date.slice(5).replace("-","/"))}</div></th>`).join("")}
               </tr>
             </thead>
             <tbody>
               ${caseObj.meds.map((med) => `
                 <tr>
                   <td>${esc(med.name)}<div class="panel-sub">${esc(LOGIC.MED_ROUTE_LABELS[med.route])}</div></td>
-                  ${days.map((day) => {
-                    const on = med.startDate && med.startDate <= day.date && (!med.endDate || med.endDate >= day.date);
+                  ${dates.map((date) => {
+                    const on = med.startDate && med.startDate <= date && (!med.endDate || med.endDate >= date);
                     const cls = [
-                      day.date === todayISO() ? "today" : "",
+                      dayCls(date),
                       on ? (med.route === "oral" ? "band-oral" : "band-inj") : ""
                     ].filter(Boolean).join(" ");
                     const tag = !on ? ""
-                      : med.startDate === day.date && med.endDate === day.date ? `<span class="band-tag">開始/終了</span>`
-                      : med.startDate === day.date ? `<span class="band-tag">開始</span>`
-                      : med.endDate === day.date ? `<span class="band-tag">終了</span>`
+                      : med.startDate === date && med.endDate === date ? `<span class="band-tag">開始/終了</span>`
+                      : med.startDate === date ? `<span class="band-tag">開始</span>`
+                      : med.endDate === date ? `<span class="band-tag">終了</span>`
                       : "";
                     return `<td class="${cls}">${tag}</td>`;
                   }).join("")}
                 </tr>
               `).join("")}
               <tr>
-                <td>イベント</td>
-                ${days.map((day) => {
-                  const list = caseObj.events.filter((eventObj) => eventObj.date === day.date);
-                  return `<td class="${day.date === todayISO() ? "today" : ""}"><div class="cell-stack">${list.map((eventObj) => `<button class="event-dot" title="${esc(LOGIC.EVENT_TYPE_LABELS[eventObj.type] + " " + eventObj.title)}" onclick="showEventInfo('${eventObj.id}')">${esc(LOGIC.EVENT_TYPE_LABELS[eventObj.type].slice(0,1))}</button>`).join("")}</div></td>`;
+                <td>Events</td>
+                ${dates.map((date) => {
+                  const list = caseObj.events.filter((eventObj) => eventObj.date === date);
+                  return `<td class="${dayCls(date)}"><div class="cell-stack">${list.map((eventObj) => `<button class="event-dot" title="${esc(LOGIC.EVENT_TYPE_LABELS[eventObj.type] + " " + eventObj.title)}" onclick="showEventInfo('${eventObj.id}')">${esc(LOGIC.EVENT_TYPE_LABELS[eventObj.type].slice(0,1))}</button>`).join("")}</div></td>`;
                 }).join("")}
               </tr>
             </tbody>
@@ -1892,7 +2076,7 @@ function renderTrash(){
   return `
     <div class="page-head">
       <div>
-        <div class="page-title">ゴミ箱</div>
+        <div class="page-title">Trash</div>
         <div class="panel-sub">削除済み症例は30日で自動削除。復元か完全削除のみ。</div>
       </div>
       <button class="compact-btn" onclick="go('list')">← 一覧</button>
