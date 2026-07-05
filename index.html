@@ -1,5 +1,5 @@
 ﻿<!DOCTYPE html>
-<!-- Casebook v6: local-only inpatient tracker. v6 per on-device QA feedback: calendar-range timeline (future dates; fixes events not appearing), selectable theme (auto/light/dark, grayscale dark), English section names, Problem List first, add-rows at panel bottom, everything editable after creation. Data model / logic / storage key unchanged. Implemented directly by Claude (Fable 5), no Codex. -->
+<!-- Casebook v6.1: local-only inpatient tracker. v6 per on-device QA feedback: calendar-range timeline (future dates; fixes events not appearing), selectable theme (auto/light/dark, grayscale dark), English section names, Problem List first, add-rows at panel bottom, everything editable after creation. v6.1: export Markdown headings in English (co-revised with the /casebook Vault skill; old Japanese headings still accepted there). Data model / logic / storage key unchanged. Implemented directly by Claude (Fable 5), no Codex. -->
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
@@ -664,16 +664,16 @@ function logicFactory(){
 
   function buildDailyExport(data, today){
     var model = normalizeData(data);
-    var lines = ["# Casebook 書き出し " + today];
+    var lines = ["# Casebook Export " + today];
     model.cases.filter(function(c){ return c.status === "active" && !c.deletedAt; }).forEach(function(caseObj){
       var day = getDay(caseObj, today) || makeEmptyDay(today);
       var changes = latestChangeItems(caseObj, today);
       var sev = severityLabel(caseObj.severity);
-      lines.push("## 症例: " + (sev ? "【" + sev + "】" : "") + formatLabel(caseObj) + "（病日" + dayNumber(caseObj, today) + "）");
+      lines.push("## Case: " + (sev ? "【" + sev + "】" : "") + formatLabel(caseObj) + "（病日" + dayNumber(caseObj, today) + "）");
       if(caseObj.patientSummary){
         lines.push("P: " + caseObj.patientSummary.replace(/\n/g, " "));
       }
-      lines.push("### 問題リスト");
+      lines.push("### Problem List");
       var activeProblems = caseObj.problems.filter(function(p){ return p.active !== false && p.title; });
       if(activeProblems.length){
         activeProblems.forEach(function(problem, index){
@@ -684,19 +684,19 @@ function logicFactory(){
       } else {
         lines.push("- なし");
       }
-      lines.push("### 今日やる");
+      lines.push("### To Do");
       if(day.todos.length){ day.todos.forEach(function(todo){ lines.push("- [" + (todo.done ? "x" : " ") + "] " + todo.text); }); }
       else { lines.push("- なし"); }
-      lines.push("### 待ち");
+      lines.push("### Waiting");
       if(day.waits.length){ day.waits.forEach(function(wait){ lines.push("- [" + (wait.resolved ? "x" : " ") + "] " + wait.text); }); }
       else { lines.push("- なし"); }
-      lines.push("### もしもプラン");
+      lines.push("### Contingency Plan");
       if(caseObj.contingency.length){ caseObj.contingency.forEach(function(item){ lines.push("- " + item.text); }); }
       else { lines.push("- なし"); }
-      lines.push("### 引っかかり");
+      lines.push("### Hooks");
       if(day.hooks.length){ day.hooks.forEach(function(hook){ lines.push("- " + hook.text); }); }
       else { lines.push("- なし"); }
-      lines.push("### 薬剤・イベント（本日変更分）");
+      lines.push("### Medications & Events（本日変更分）");
       if(!changes.meds.length && !changes.events.length){
         lines.push("- 変更なし");
       } else {
@@ -709,7 +709,7 @@ function logicFactory(){
           lines.push("- イベント: " + eventObj.date.slice(5).replace("-", "/") + " " + EVENT_TYPE_LABELS[eventObj.type] + " " + eventObj.title);
         });
       }
-      lines.push("### 写真");
+      lines.push("### Photos");
       lines.push("- 入院時写真 " + caseObj.admission.photoIds.length + "枚 → Obsidian へ共有済みのものを /casebook が OCR");
     });
     return lines.join("\n");
@@ -727,23 +727,23 @@ function logicFactory(){
       "",
       "# " + formatLabel(c),
       "",
-      "## 入院期間",
+      "## Admission Period",
       "- 入院日: " + (c.admittedAt || ""),
       "- 退院日: " + (c.dischargedAt || ""),
       "- 重症度: " + (severityLabel(c.severity) || "未設定"),
       "",
-      "## 患者サマリ",
+      "## Patient Summary",
       c.patientSummary || "- なし",
       "",
-      "## 入院時記録",
+      "## Admission Note",
       c.admission.note || "- なし",
       "",
-      "## ルーチン",
+      "## Routine",
     ];
     if(routineList.length){ routineList.forEach(function(label){ lines.push("- " + label); }); }
     else { lines.push("- なし"); }
     lines.push("");
-    lines.push("## 問題リスト");
+    lines.push("## Problem List");
     if(c.problems.length){
       c.problems.forEach(function(problem, index){
         lines.push("### #" + (index + 1) + " " + (problem.title || "未設定"));
@@ -754,7 +754,7 @@ function logicFactory(){
       lines.push("- なし");
       lines.push("");
     }
-    lines.push("## 日々のログ");
+    lines.push("## Daily Log");
     if(c.days.length){
       c.days.forEach(function(day){
         lines.push("### " + day.date);
@@ -767,7 +767,7 @@ function logicFactory(){
       lines.push("- なし");
       lines.push("");
     }
-    lines.push("## 薬剤一覧");
+    lines.push("## Medications");
     if(c.meds.length){
       c.meds.forEach(function(med){
         lines.push("- " + med.name + " / " + MED_ROUTE_LABELS[med.route] + " / " + med.startDate + "〜" + (med.endDate || "継続中") + (med.note ? " / " + med.note.replace(/\n/g, " ") : ""));
@@ -776,7 +776,7 @@ function logicFactory(){
       lines.push("- なし");
     }
     lines.push("");
-    lines.push("## イベント一覧");
+    lines.push("## Events");
     if(c.events.length){
       c.events.forEach(function(eventObj){
         lines.push("- " + eventObj.date + " / " + EVENT_TYPE_LABELS[eventObj.type] + " / " + eventObj.title + (eventObj.note ? " / " + eventObj.note.replace(/\n/g, " ") : ""));
@@ -785,17 +785,17 @@ function logicFactory(){
       lines.push("- なし");
     }
     lines.push("");
-    lines.push("## 退院時サマリ");
-    lines.push("### 経過要約");
+    lines.push("## Discharge Summary");
+    lines.push("### Course");
     lines.push(c.summary.course || "");
     lines.push("");
-    lines.push("### 私の実践");
+    lines.push("### My Practice");
     lines.push(c.summary.myPractice || "");
     lines.push("");
-    lines.push("### 転帰");
+    lines.push("### Outcome");
     lines.push(c.summary.outcome || "");
     lines.push("");
-    lines.push("## 退院時未解消の待ち");
+    lines.push("## Unresolved Waiting");
     var lastDay = getLatestDay(c);
     var pendingWaits = lastDay ? lastDay.waits.filter(function(wait){ return !wait.resolved && wait.text; }).map(function(wait){ return wait.text; }) : [];
     if(pendingWaits.length){
