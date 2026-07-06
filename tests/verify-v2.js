@@ -236,4 +236,23 @@ if (!utSection.includes("未完の仕事")) { console.error("NG: Unresolved To D
 if (utSection.includes("済んだ仕事")) { console.error("NG: Unresolved To Do に完了済みが混入"); process.exit(1); }
 console.log("v8.0 (Unresolved To Do in discharge export): OK");
 
+// 16) v8.1: 週間予定（buildWeekItems / followup 種別）
+if (L.EVENT_TYPE_LABELS.followup !== "外来F/U") { console.error("NG: EVENT_TYPE_LABELS に followup が無い"); process.exit(1); }
+const cFu = L.ensureCaseShape(Object.assign(mkCase(), { events: [{ id: "ef", date: "2026-07-08", type: "followup", title: "外来再診" }] }));
+if (cFu.events[0].type !== "followup") { console.error("NG: ensureCaseShape が followup 種別を other に丸める"); process.exit(1); }
+const wkData = { version: 2, cases: [
+  L.ensureCaseShape(Object.assign(mkCase(), { id: "a", plannedDischargeAt: "2026-07-06", events: [{ id: "e1", date: "2026-07-05", type: "test", title: "CT" }, { id: "e2", date: "2026-07-20", type: "test", title: "範囲外" }] })),
+  L.ensureCaseShape(Object.assign(mkCase(), { id: "b", status: "discharged", dischargedAt: "2026-07-01", events: [{ id: "e3", date: "2026-07-07", type: "followup", title: "外来" }, { id: "e4", date: "2026-07-07", type: "test", title: "退院済みの検査" }] }))
+]};
+const wk = L.buildWeekItems(wkData, "2026-07-04", 7);
+if (wk.length !== 7 || wk[0].date !== "2026-07-04" || wk[6].date !== "2026-07-10") { console.error("NG: buildWeekItems の7日窓が不正"); process.exit(1); }
+const wkTexts = [];
+wk.forEach(d => d.items.forEach(i => wkTexts.push(d.date + ":" + i.text)));
+if (!wkTexts.includes("2026-07-05:検査 CT")) { console.error("NG: 週間予定にイベントが出ない"); process.exit(1); }
+if (!wkTexts.includes("2026-07-06:退院予定")) { console.error("NG: 週間予定に退院予定が出ない"); process.exit(1); }
+if (!wkTexts.includes("2026-07-07:外来F/U 外来")) { console.error("NG: 週間予定に退院済みの外来F/Uが出ない"); process.exit(1); }
+if (wkTexts.some(t => t.includes("範囲外"))) { console.error("NG: 7日窓の外のイベントが混入"); process.exit(1); }
+if (wkTexts.some(t => t.includes("退院済みの検査"))) { console.error("NG: 退院済み症例の非followupイベントが混入"); process.exit(1); }
+console.log("v8.1 (buildWeekItems / followup): OK");
+
 console.log("ALL TESTS PASSED");

@@ -442,6 +442,7 @@
       </div>
       <div class="spacer"></div>
       <div class="header-actions">
+        <button class="pill-btn" onclick="go('week')">Week</button>
         <button class="pill-btn" onclick="copyDailyExport()">
           Export
           <span class="count-badge" data-count="export">0</span>
@@ -459,6 +460,7 @@
   <nav class="bottombar">
     <div class="bottombar-in">
       <button class="bnav" data-nav="list" onclick="go('list')"><span class="ico">▤</span>List</button>
+      <button class="bnav" data-nav="week" onclick="go('week')"><span class="ico">▦</span>Week</button>
       <button class="bnav" onclick="newCaseModal()"><span class="ico">＋</span>New</button>
       <button class="bnav" onclick="copyDailyExport()"><span class="ico">⧉</span>Export<span class="count-badge" data-count="export">0</span></button>
     </div>
@@ -470,7 +472,7 @@
 function logicFactory(){
   const SEVERITY_LABELS = { stable:"安定", watcher:"要注意", unstable:"不安定" };
   const MED_ROUTE_LABELS = { oral:"内服", inj:"注射" };
-  const EVENT_TYPE_LABELS = { test:"検査", surgery:"手術", procedure:"処置", treatment:"治療", other:"その他" };
+  const EVENT_TYPE_LABELS = { test:"検査", surgery:"手術", procedure:"処置", treatment:"治療", followup:"外来F/U", other:"その他" };
   const ROUTINE = [
     {k:"meds", t:"休薬・内服調整", h:"抗血栓薬・DM薬・サプリ"},
     {k:"allergy", t:"アレルギー・予防接種", h:"FA/DA・肺炎球菌等"},
@@ -900,6 +902,45 @@ function logicFactory(){
     return d.toISOString().slice(0, 10);
   }
 
+  function nextDateISO(iso){
+    var d = new Date(iso + "T12:00:00");
+    d.setDate(d.getDate() + 1);
+    return d.toISOString().slice(0, 10);
+  }
+
+  // 週間予定: 今日から span 日、日付ごとに①アクティブ症例のイベント（全種別）
+  // ②退院予定 ③退院済み症例の外来F/U を集める
+  function buildWeekItems(data, today, span){
+    var model = normalizeData(data);
+    var days = [];
+    var cur = today;
+    for(var i = 0; i < (span || 7); i += 1){
+      days.push({ date:cur, items:[] });
+      cur = nextDateISO(cur);
+    }
+    var byDate = {};
+    days.forEach(function(d){ byDate[d.date] = d; });
+    model.cases.forEach(function(caseObj){
+      if(caseObj.deletedAt){ return; }
+      var label = formatLabel(caseObj) || "未設定";
+      var active = caseObj.status === "active";
+      caseObj.events.forEach(function(eventObj){
+        if(!byDate[eventObj.date]){ return; }
+        if(!active && eventObj.type !== "followup"){ return; }
+        byDate[eventObj.date].items.push({
+          caseId:caseObj.id,
+          label:label,
+          kind:eventObj.type,
+          text:EVENT_TYPE_LABELS[eventObj.type] + " " + eventObj.title
+        });
+      });
+      if(active && caseObj.plannedDischargeAt && byDate[caseObj.plannedDischargeAt]){
+        byDate[caseObj.plannedDischargeAt].items.push({ caseId:caseObj.id, label:label, kind:"discharge", text:"退院予定" });
+      }
+    });
+    return days;
+  }
+
   function computeStreak(exportedDates, today){
     var set = {};
     (exportedDates || []).forEach(function(date){ set[date] = true; });
@@ -947,6 +988,8 @@ function logicFactory(){
     buildDischargeExport:buildDischargeExport,
     parseBackup:parseBackup,
     prevDateISO:prevDateISO,
+    nextDateISO:nextDateISO,
+    buildWeekItems:buildWeekItems,
     computeStreak:computeStreak,
     pruneStatsDays:pruneStatsDays
   };
@@ -1653,7 +1696,7 @@ function editEventModal(eventId){
     <div class="modal-grid">
       <input id="eeDate" class="input" type="date" value="${esc(eventObj.date || "")}">
       <select id="eeType" class="select">
-        ${["test","surgery","procedure","treatment","other"].map((t) => `<option value="${t}" ${eventObj.type === t ? "selected" : ""}>${esc(LOGIC.EVENT_TYPE_LABELS[t])}</option>`).join("")}
+        ${["test","surgery","procedure","treatment","followup","other"].map((t) => `<option value="${t}" ${eventObj.type === t ? "selected" : ""}>${esc(LOGIC.EVENT_TYPE_LABELS[t])}</option>`).join("")}
       </select>
     </div>
     <div style="margin-top:10px"><input id="eeTitle" class="input" placeholder="タイトル" value="${esc(eventObj.title)}"></div>
@@ -1965,6 +2008,7 @@ function render(){
   refreshNav();
   const app = document.getElementById("app");
   if(VIEW.name === "list"){ app.innerHTML = renderListV21(); }
+  else if(VIEW.name === "week"){ app.innerHTML = renderWeekView(); }
   else if(VIEW.name === "case"){ app.innerHTML = renderCaseV21(); hydrateCaseAsync(); }
   else if(VIEW.name === "trash"){ app.innerHTML = renderTrash(); }
   renderSaveOnly();
@@ -2286,6 +2330,7 @@ function renderTodayTabV21(caseObj, day){
                 <option value="surgery">手術</option>
                 <option value="procedure">処置</option>
                 <option value="treatment">治療</option>
+                <option value="followup">外来F/U</option>
                 <option value="other">その他</option>
               </select>
             </div>
@@ -2454,10 +2499,37 @@ function renderLogTab(caseObj){
   `;
 }
 
-function nextDateISO(iso){
-  const d = new Date(iso + "T12:00:00");
-  d.setDate(d.getDate() + 1);
-  return d.toISOString().slice(0, 10);
+const nextDateISO = LOGIC.nextDateISO;
+const WEEKDAYS_JA = ["日","月","火","水","木","金","土"];
+const weekdayLabel = (iso) => WEEKDAYS_JA[new Date(iso + "T12:00:00").getDay()] || "";
+
+function renderWeekView(){
+  const today = todayISO();
+  const days = LOGIC.buildWeekItems(DB, today, 7);
+  return `
+    <div class="page-head">
+      <div>
+        <div class="page-title">Week</div>
+        <div class="panel-sub">今後7日の予定（イベント・退院予定・外来F/U）。行タップで症例へ</div>
+      </div>
+    </div>
+    <div class="log-group">
+      ${days.map((d) => `
+        <article class="log-card">
+          <div class="log-title">
+            <strong class="mono">${esc(d.date.slice(5).replace("-","/"))} (${weekdayLabel(d.date)})</strong>
+            ${d.date === today ? `<span class="flag clear">今日</span>` : ""}
+          </div>
+          ${d.items.length ? `<div class="list">${d.items.map((item) => `
+            <div class="row-item" onclick="go('case','${item.caseId}')" style="cursor:pointer">
+              <span class="row-dot"></span>
+              <div class="row-input" style="cursor:pointer">${esc(item.label)} — ${esc(item.text)}</div>
+            </div>
+          `).join("")}</div>` : `<div class="panel-sub">予定なし</div>`}
+        </article>
+      `).join("")}
+    </div>
+  `;
 }
 
 // 経過表の日付列: 入院日 〜 max(今日, イベント日, 薬剤開始/終了日, 退院日)。

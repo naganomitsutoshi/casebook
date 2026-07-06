@@ -186,8 +186,16 @@ vm.runInContext(mainSrc, sandbox);
   }
   vm.runInContext("c.plannedDischargeAt = ''; VIEW.caseEdit=false", sandbox);
 
+  // v8.1: Week ビュー（当日イベントが載る・下部ナビに Week がある）
+  const weekHtml = vm.runInContext("VIEW={name:'week',caseId:null,tab:'today',filter:'active'}; renderWeekView()", sandbox);
+  if (!weekHtml.includes("Week") || !weekHtml.includes("今日") || !weekHtml.includes("嚥下評価")) {
+    console.error("NG: Week ビューに当日イベントが出ない"); process.exit(1);
+  }
+  if (!html.includes('data-nav="week"')) { console.error("NG: 下部ナビに Week が無い"); process.exit(1); }
+
   // render() 本体もDOMスタブ上で例外なく通るか
   vm.runInContext("render()", sandbox);
+  vm.runInContext("VIEW={name:'week',caseId:null,tab:'today',filter:'active'}; render()", sandbox);
   vm.runInContext("VIEW={name:'list',caseId:null,tab:'today',filter:'active'}; render()", sandbox);
 
   console.log("SMOKE ALL PASSED");
