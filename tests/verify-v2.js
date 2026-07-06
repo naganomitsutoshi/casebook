@@ -213,4 +213,18 @@ L.applyPlannedDischarge(cPd2, "2026-07-04");
 if (cPd2.status !== "discharged" || cPd2.dischargedAt !== "2026-07-02") { console.error("NG: 予定日超過の発火・退院日が不正"); process.exit(1); }
 console.log("v8.0 (applyPlannedDischarge): OK");
 
+// 14) v8.0: 退院チェックリスト（DC_ROUTINE / 書き出し）
+if (!Array.isArray(L.DC_ROUTINE) || L.DC_ROUTINE.length !== 7) { console.error("NG: DC_ROUTINE が7項目でない"); process.exit(1); }
+for (const k of ["summary", "rx", "careplan", "referral", "followup", "explain", "resources"]) {
+  if (!L.DC_ROUTINE.some(r => r.k === k)) { console.error("NG: DC_ROUTINE に " + k + " が無い"); process.exit(1); }
+}
+const cDc = L.ensureCaseShape(mkCase());  // 旧データ（dischargeChecklist 無し）→ 全て未チェックで補完
+if (Object.keys(cDc.dischargeChecklist).length !== 7 || cDc.dischargeChecklist.summary !== false) { console.error("NG: dischargeChecklist の補完が不正"); process.exit(1); }
+cDc.dischargeChecklist.summary = true;
+cDc.dischargeChecklist.followup = true;
+const disDc = L.buildDischargeExport(cDc);
+if (!disDc.includes("## Discharge Checklist")) { console.error("NG: 退院書き出しに Discharge Checklist 節が無い"); process.exit(1); }
+if (!disDc.includes("- [x] 退院サマリ") || !disDc.includes("- [x] 外来フォロー予約") || !disDc.includes("- [ ] 退院時処方")) { console.error("NG: チェック状態が書き出しに反映されない"); process.exit(1); }
+console.log("v8.0 (DC_ROUTINE / discharge checklist export): OK");
+
 console.log("ALL TESTS PASSED");

@@ -483,6 +483,16 @@ function logicFactory(){
     {k:"rehab", t:"リハGoal", h:"病前ADL・退院先・退院基準"},
     {k:"acp", t:"退院支援・ACP", h:"多職種・介護保険・IC"}
   ];
+  // 退院チェックリスト（カルテに各文書・手配を済ませたかの確認。二重記録禁止は維持）
+  const DC_ROUTINE = [
+    {k:"summary", t:"退院サマリ", h:"作成・提出"},
+    {k:"rx", t:"退院時処方", h:"処方・残数確認"},
+    {k:"careplan", t:"退院療養計画書", h:"交付・説明"},
+    {k:"referral", t:"診療情報提供書", h:"かかりつけ・転院先"},
+    {k:"followup", t:"外来フォロー予約", h:"予約日・担当"},
+    {k:"explain", t:"本人・家族への説明", h:"退院日・注意点"},
+    {k:"resources", t:"介護・社会資源調整", h:"ケアマネ・訪問系・MSW"}
+  ];
 
   function makeId(){
     return Math.random().toString(36).slice(2,10);
@@ -515,6 +525,15 @@ function logicFactory(){
     return next;
   }
 
+  function normalizeDcChecklist(obj){
+    const source = obj && typeof obj === "object" ? obj : {};
+    const next = {};
+    DC_ROUTINE.forEach(function(item){
+      next[item.k] = !!source[item.k];
+    });
+    return next;
+  }
+
   function routineLabels(routine){
     const safe = normalizeRoutine(routine);
     return ROUTINE.filter(function(item){ return !!safe[item.k]; }).map(function(item){ return item.t; });
@@ -535,6 +554,7 @@ function logicFactory(){
       dischargedAt:null,
       plannedDischargeAt:"",
       admission:{ note:"", photoIds:[], routine:{} },
+      dischargeChecklist:{},
       patientSummary:"",
       contingency:[],
       problems:[],
@@ -548,6 +568,7 @@ function logicFactory(){
     out.admission = Object.assign({}, base.admission, out.admission || {});
     out.admission.photoIds = Array.isArray(out.admission.photoIds) ? out.admission.photoIds.slice() : [];
     out.admission.routine = normalizeRoutine(out.admission.routine);
+    out.dischargeChecklist = normalizeDcChecklist(out.dischargeChecklist);
     out.patientSummary = typeof out.patientSummary === "string" ? out.patientSummary : "";
     // 部屋番号は識別性の低い運用情報のみ（氏名不可）。書き出しには載せない
     out.room = typeof out.room === "string" ? out.room : "";
@@ -780,6 +801,11 @@ function logicFactory(){
     if(routineList.length){ routineList.forEach(function(label){ lines.push("- " + label); }); }
     else { lines.push("- なし"); }
     lines.push("");
+    lines.push("## Discharge Checklist");
+    DC_ROUTINE.forEach(function(item){
+      lines.push("- [" + (c.dischargeChecklist[item.k] ? "x" : " ") + "] " + item.t);
+    });
+    lines.push("");
     lines.push("## Problem List");
     if(c.problems.length){
       c.problems.forEach(function(problem, index){
@@ -891,6 +917,8 @@ function logicFactory(){
     MED_ROUTE_LABELS:MED_ROUTE_LABELS,
     EVENT_TYPE_LABELS:EVENT_TYPE_LABELS,
     ROUTINE:ROUTINE,
+    DC_ROUTINE:DC_ROUTINE,
+    normalizeDcChecklist:normalizeDcChecklist,
     makeId:makeId,
     isoNow:isoNow,
     makeEmptyDay:makeEmptyDay,
@@ -924,6 +952,7 @@ const KEY = "casebook:v2";
 const PHOTO_DB = "casebook-photos";
 const PHOTO_STORE = "photos";
 const ROUTINE = LOGIC.ROUTINE;
+const DC_ROUTINE = LOGIC.DC_ROUTINE;
 // ローカル日付（toISOString は UTC のため JST では 09:00 に日付が変わる不具合があった）
 const todayISO = () => {
   const d = new Date();
@@ -1524,6 +1553,12 @@ function removeContingency(caseId, itemId){
 function toggleRoutine(caseId, key){
   const caseObj = findCase(caseId);
   caseObj.admission.routine[key] = !caseObj.admission.routine[key];
+  persist();
+}
+
+function toggleDcChecklist(caseId, key){
+  const caseObj = findCase(caseId);
+  caseObj.dischargeChecklist[key] = !caseObj.dischargeChecklist[key];
   persist();
 }
 
@@ -2237,6 +2272,15 @@ function renderTodayTabV21(caseObj, day){
             <button class="compact-btn" onclick="toggleSection(this,'summaryBody')">開く</button>
           </div>
           <div class="collapse-body hide" id="summaryBody">
+            <div class="panel-sub">Discharge Checklist（退院前の確認・カルテに済ませたか）</div>
+            <div class="routine-grid" style="margin-top:8px;margin-bottom:12px">
+              ${DC_ROUTINE.map((item) => `
+                <button class="routine-btn ${caseObj.dischargeChecklist[item.k] ? "on" : ""}" onclick="toggleDcChecklist('${caseObj.id}','${item.k}')">
+                  <span class="routine-box">${caseObj.dischargeChecklist[item.k] ? "✓" : ""}</span>
+                  <span class="routine-copy"><strong>${esc(item.t)}</strong><span>${esc(item.h)}</span></span>
+                </button>
+              `).join("")}
+            </div>
             <label class="panel-sub">経過</label>
             <textarea class="textarea" rows="5" oninput="updateCaseText('${caseObj.id}','summary.course',this.value)">${esc(caseObj.summary.course)}</textarea>
             <label class="panel-sub" style="display:block;margin-top:10px">転帰</label>

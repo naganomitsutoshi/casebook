@@ -73,7 +73,7 @@ vm.runInContext(mainSrc, sandbox);
 
   const checks = [
     ["renderListV21()", ["新規症例", "入院中", "case-row", "Trash", "theme-seg", "Export 連続", "累計", "dot-untouched", "progress-row", "バックアップ", "復元", "handleRestoreInput"]],
-    ["renderCaseV21()", ["Problem List", "To Do", "Waiting", "Contingency Plan", "Hooks", "tabs-bar", "症例ラベル", "入院日", "updateCaseLabel", "today-progress", "Rm 402", "部屋番号"]],
+    ["renderCaseV21()", ["Problem List", "To Do", "Waiting", "Contingency Plan", "Hooks", "tabs-bar", "症例ラベル", "入院日", "updateCaseLabel", "today-progress", "Rm 402", "部屋番号", "Discharge Checklist", "toggleDcChecklist"]],
     ["(VIEW.tab='log', renderCaseV21())", ["Log", "todoInput-" + today]],
     ["(VIEW.tab='timeline', renderCaseV21())", ["Timeline", "band-inj", "tl-legend", "開始"]],
     ["renderTrash()", ["Trash"]]
