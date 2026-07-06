@@ -280,4 +280,19 @@ console.log("v8.1 (injectRxTodo / field preservation): OK");
 if (L.orderWaitText("血液培養") !== "結果確認: 血液培養") { console.error("NG: orderWaitText の形式が違う"); process.exit(1); }
 console.log("v8.1 (orderWaitText): OK");
 
+// 19) v8.1: PWA シェル（sw.js 構文 / manifest 相対パス / SW 登録ガード / 外部送信なし）
+const swSrc = fs.readFileSync(path.join(__dirname, "..", "sw.js"), "utf8");
+new vm.Script(swSrc, { filename: "sw.js" }); // throws on syntax error
+if (!swSrc.includes("navigate") || !/fetch\(req\)/.test(swSrc)) { console.error("NG: sw.js に navigate の network-first が無い"); process.exit(1); }
+if (!swSrc.includes("url.origin !== self.location.origin")) { console.error("NG: sw.js が同一オリジンに限定されていない"); process.exit(1); }
+if (/https?:\/\//.test(swSrc)) { console.error("NG: sw.js に外部 URL が含まれる"); process.exit(1); }
+const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "manifest.webmanifest"), "utf8"));
+if (manifest.start_url !== "./" || manifest.scope !== "./") { console.error("NG: manifest の start_url/scope が相対でない（/casebook/ サブパスで壊れる）"); process.exit(1); }
+if (!manifest.icons || manifest.icons.length < 2 || manifest.icons.some(i => !i.src.startsWith("./"))) { console.error("NG: manifest のアイコンパスが相対でない"); process.exit(1); }
+for (const f of ["icons/icon-192.png", "icons/icon-512.png", "icons/apple-touch-icon.png"]) {
+  if (!fs.existsSync(path.join(__dirname, "..", f))) { console.error("NG: アイコンが無い: " + f); process.exit(1); }
+}
+if (!html.includes('rel="manifest"') || !html.includes('"serviceWorker" in navigator')) { console.error("NG: index.html に manifest リンク / ガード付き SW 登録が無い"); process.exit(1); }
+console.log("v8.1 (PWA shell): OK");
+
 console.log("ALL TESTS PASSED");

@@ -1,0 +1,16 @@
+{
+  "name": "Casebook",
+  "short_name": "Casebook",
+  "description": "病棟症例の記録と学習ループ（本人専用・端末内保存）",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f3f5f3",
+  "theme_color": "#f3f5f3",
+  "lang": "ja",
+  "icons": [
+    { "src": "./icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "./icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

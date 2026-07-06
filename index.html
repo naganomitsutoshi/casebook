@@ -1,5 +1,5 @@
 ﻿<!DOCTYPE html>
-<!-- Casebook v7: local-only inpatient tracker. v7: gamified input nudges (record/learning behavior only, never patient care) — today progress bars, untouched-case dots, export streak + 14-day dot row, evening in-app nudge, random completion message, cumulative counters. Stats in separate key casebook:stats (dates/counts only, no PII). v6.1: export Markdown headings in English (co-revised with the /casebook Vault skill). v6: calendar-range timeline, selectable grayscale dark theme, English section names, edit-everything. Storage key casebook:v2 unchanged. Implemented directly by Claude (Fable 5), no Codex. -->
+<!-- Casebook v8: local-only inpatient tracker, now a daily-ward tool. v8.0: local-date fix (was UTC), discharged-days pollution fix, manual+auto JSON backup (photos excluded), room number (never exported), planned-discharge auto-fire on open, discharge checklist, post-discharge pending panel. v8.1: week view (+followup event type), weekday rx reminder (casebook:settings), two-stage order tracking (src/promoted), PWA shell (manifest/sw/icons; app itself stays a single HTML; SW is network-first for navigate — kill switch in HANDOFF §20). Storage key casebook:v2 unchanged, fields additive only. v7: gamified input nudges (casebook:stats). Implemented directly by Claude (Fable 5), no Codex. -->
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
@@ -7,6 +7,10 @@
 <meta name="theme-color" content="#f3f5f3">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Casebook">
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
+<link rel="icon" type="image/png" href="./icons/icon-192.png">
 <title>Casebook</title>
 <style>
   :root{
@@ -2774,6 +2778,13 @@ async function boot(){
 }
 
 boot();
+
+// PWA: service worker 登録（相対パス= /casebook/ サブパス対応。非対応環境ではガードで何もしない）
+if("serviceWorker" in navigator){
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("./sw.js").catch(() => {});
+  });
+}
 </script>
 </body>
 </html>
