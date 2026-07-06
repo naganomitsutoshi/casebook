@@ -186,6 +186,17 @@ vm.runInContext(mainSrc, sandbox);
   }
   vm.runInContext("c.plannedDischargeAt = ''; VIEW.caseEdit=false", sandbox);
 
+  // v8.1: 定期処方曜日チップ（設定は casebook:settings・casebook:v2 とは別キー）
+  const listRx = vm.runInContext("VIEW={name:'list',caseId:null,tab:'today',filter:'active'}; renderListV21()", sandbox);
+  if (!listRx.includes("定期処方曜日") || !listRx.includes("toggleRxWeekday(1)")) {
+    console.error("NG: 一覧に定期処方曜日チップが無い"); process.exit(1);
+  }
+  vm.runInContext("toggleRxWeekday(new Date().getDay())", sandbox);
+  const settingsRaw = sandbox.localStorage.getItem("casebook:settings");
+  if (!settingsRaw || !settingsRaw.includes("rxWeekdays")) { console.error("NG: 曜日設定が casebook:settings に保存されない"); process.exit(1); }
+  const rxTodoAdded = vm.runInContext("c.days.some(d => d.todos.some(t => t.src === 'rx'))", sandbox);
+  if (!rxTodoAdded) { console.error("NG: 当日曜日をONにしても rx To Do が注入されない"); process.exit(1); }
+
   // v8.1: Week ビュー（当日イベントが載る・下部ナビに Week がある）
   const weekHtml = vm.runInContext("VIEW={name:'week',caseId:null,tab:'today',filter:'active'}; renderWeekView()", sandbox);
   if (!weekHtml.includes("Week") || !weekHtml.includes("今日") || !weekHtml.includes("嚥下評価")) {

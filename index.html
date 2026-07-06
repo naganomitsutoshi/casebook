@@ -505,7 +505,7 @@ function logicFactory(){
   }
 
   function makeEmptyDay(date){
-    return { date, todos:[], waits:[], hooks:[] };
+    return { date, todos:[], waits:[], hooks:[], rxInjected:false };
   }
 
   function dayNumber(caseObj, today){
@@ -603,8 +603,10 @@ function logicFactory(){
     out.days = Array.isArray(out.days) ? out.days.map(function(d){
       const day = Object.assign(makeEmptyDay(d.date || ""), d || {});
       delete day.collect;
-      day.todos = Array.isArray(day.todos) ? day.todos.map(function(t){ return { id:t.id || makeId(), text:t.text || "", done:!!t.done }; }) : [];
-      day.waits = Array.isArray(day.waits) ? day.waits.map(function(w){ return { id:w.id || makeId(), text:w.text || "", resolved:!!w.resolved }; }) : [];
+      day.rxInjected = !!day.rxInjected;
+      // src（"rx"/"order"）と promoted は v8.1 の構造化属性。ここで落とすと静かにデータが消えるので明示的に保全
+      day.todos = Array.isArray(day.todos) ? day.todos.map(function(t){ return { id:t.id || makeId(), text:t.text || "", done:!!t.done, src:typeof t.src === "string" ? t.src : "", promoted:!!t.promoted }; }) : [];
+      day.waits = Array.isArray(day.waits) ? day.waits.map(function(w){ return { id:w.id || makeId(), text:w.text || "", resolved:!!w.resolved, src:typeof w.src === "string" ? w.src : "" }; }) : [];
       day.hooks = Array.isArray(day.hooks) ? day.hooks.map(function(h){ return { id:h.id || makeId(), text:h.text || "" }; }) : [];
       return day;
     }).sort(function(a,b){ return a.date.localeCompare(b.date); }) : [];
@@ -666,14 +668,29 @@ function logicFactory(){
     }
     var nextDay = makeEmptyDay(today);
     nextDay.todos = latest.todos.filter(function(t){ return !t.done; }).map(function(t){
-      return { id:makeId(), text:t.text, done:false };
+      return { id:makeId(), text:t.text, done:false, src:typeof t.src === "string" ? t.src : "", promoted:!!t.promoted };
     });
     nextDay.waits = latest.waits.filter(function(w){ return !w.resolved; }).map(function(w){
-      return { id:makeId(), text:w.text, resolved:false };
+      return { id:makeId(), text:w.text, resolved:false, src:typeof w.src === "string" ? w.src : "" };
     });
     c.days.push(nextDay);
     c.days.sort(function(a,b){ return a.date.localeCompare(b.date); });
     return c;
+  }
+
+  // 定期処方の曜日リマインド: 当日が設定曜日なら「定期処方の確認」To Do を1回だけ注入。
+  // rxInjected でユーザー削除後の再注入を防ぎ、繰越で既に居る場合は重複させない
+  function injectRxTodo(caseObj, today, weekdays){
+    if(!caseObj || caseObj.status !== "active" || caseObj.deletedAt){ return false; }
+    if(!Array.isArray(weekdays) || !weekdays.length){ return false; }
+    var dow = new Date(today + "T12:00:00").getDay();
+    if(weekdays.indexOf(dow) === -1){ return false; }
+    var day = getDay(caseObj, today);
+    if(!day || day.rxInjected){ return false; }
+    day.rxInjected = true;
+    if(day.todos.some(function(t){ return t.src === "rx" && !t.done; })){ return false; }
+    day.todos.push({ id:makeId(), text:"定期処方の確認", done:false, src:"rx", promoted:false });
+    return true;
   }
 
   // 退院予定日の当日判定（アプリを開いた時に発火）。発火時に予定日をクリアして
@@ -978,6 +995,7 @@ function logicFactory(){
     getLastMeaningfulDay:getLastMeaningfulDay,
     ensureTodayDay:ensureTodayDay,
     rolloverCase:rolloverCase,
+    injectRxTodo:injectRxTodo,
     applyPlannedDischarge:applyPlannedDischarge,
     purgeTrash:purgeTrash,
     formatLabel:formatLabel,
@@ -1211,6 +1229,20 @@ if(DARK_MQ && DARK_MQ.addEventListener){
   DARK_MQ.addEventListener("change", () => { if(THEME === "auto"){ applyTheme(); } });
 }
 applyTheme();
+
+// v8.1 全体設定（保存キーと別の casebook:settings。現状は定期処方曜日のみ）
+const SETTINGS_KEY = "casebook:settings";
+let SETTINGS = { rxWeekdays: [] };
+try {
+  const rawSettings = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "null");
+  if(rawSettings && typeof rawSettings === "object" && Array.isArray(rawSettings.rxWeekdays)){
+    SETTINGS.rxWeekdays = rawSettings.rxWeekdays.filter((n) => Number.isInteger(n) && n >= 0 && n <= 6);
+  }
+} catch(e) {}
+
+function saveSettings(){
+  try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(SETTINGS)); } catch(e) {}
+}
 
 // v7 ゲーミフィケーション統計（記録・学習行動のみ。患者情報は一切含まない）
 // 保存キーは casebook:v2 と別の casebook:stats（テーマと同方式）
@@ -1749,6 +1781,24 @@ function updatePlannedDischarge(caseId, value){
   persist();
 }
 
+// 定期処方 To Do の注入（全アクティブ症例・当日分）。戻り値=データ変更の有無
+function applyRxInjection(){
+  let changed = false;
+  DB.cases.forEach((caseObj) => {
+    if(LOGIC.injectRxTodo(caseObj, todayISO(), SETTINGS.rxWeekdays)){ changed = true; }
+  });
+  return changed;
+}
+
+function toggleRxWeekday(n){
+  const i = SETTINGS.rxWeekdays.indexOf(n);
+  if(i === -1){ SETTINGS.rxWeekdays.push(n); SETTINGS.rxWeekdays.sort(); }
+  else { SETTINGS.rxWeekdays.splice(i, 1); }
+  saveSettings();
+  if(applyRxInjection()){ persist({ touch:false }); }
+  else { render(); }
+}
+
 // 退院済みなのに退院書き出しがまだの症例（書き出し忘れナッジの判定）
 function dischargeExportPending(caseObj){
   if(caseObj.status !== "discharged" || caseObj.deletedAt){ return false; }
@@ -1887,9 +1937,7 @@ function copyDailyExport(){
 
 // バックアップ（casebook:v2＋stats＋theme＋settings。写真=IndexedDB は対象外）
 function buildBackupPayload(){
-  let settings = null;
-  try { settings = JSON.parse(localStorage.getItem("casebook:settings") || "null"); } catch(e) {}
-  return { app:"casebook", exportedAt:LOGIC.isoNow(), data:DB, stats:STATS, theme:THEME, settings };
+  return { app:"casebook", exportedAt:LOGIC.isoNow(), data:DB, stats:STATS, theme:THEME, settings:SETTINGS };
 }
 
 async function downloadBackup(){
@@ -1939,8 +1987,9 @@ async function doRestoreBackup(){
     STATS = { days:parsed.stats.days, totals:Object.assign({ recordDays:0 }, parsed.stats.totals) };
     saveStats();
   }
-  if(parsed.settings){
-    try { localStorage.setItem("casebook:settings", JSON.stringify(parsed.settings)); } catch(e) {}
+  if(parsed.settings && Array.isArray(parsed.settings.rxWeekdays)){
+    SETTINGS.rxWeekdays = parsed.settings.rxWeekdays.filter((n) => Number.isInteger(n) && n >= 0 && n <= 6);
+    saveSettings();
   }
   VIEW = { name:"list", caseId:null, tab:"today", filter:"active" };
   await saveNow();
@@ -2055,6 +2104,12 @@ function renderListV21(){
     </div>
     <div class="list-foot">
       <span class="panel-sub">累計 ${DB.cases.filter((c) => !c.deletedAt).length} 症例 ・ 記録 ${STATS.totals.recordDays || 0} 日</span>
+    </div>
+    <div class="list-foot">
+      <span class="panel-sub">定期処方曜日（当日朝に To Do 自動追加）</span>
+      <div class="theme-seg">
+        ${WEEKDAYS_JA.map((label, n) => `<button class="chip ${SETTINGS.rxWeekdays.includes(n) ? "on" : ""}" onclick="toggleRxWeekday(${n})">${label}</button>`).join("")}
+      </div>
     </div>
     <div class="list-foot">
       <span class="panel-sub">Data（写真は対象外）</span>
@@ -2665,6 +2720,7 @@ async function boot(){
       Object.assign(caseObj, LOGIC.rolloverCase(caseObj, todayISO()));
     }
   }
+  applyRxInjection();
   SAVE_OK = await Store.save(DB);
   LAST_SAVE_AT = new Date().toISOString();
   render();
@@ -2680,6 +2736,7 @@ async function boot(){
           if(JSON.stringify(caseObj.days) !== before){ changed = true; }
         }
       });
+      if(applyRxInjection()){ changed = true; }
       if(changed){ persist({ touch:false }); }
     }
   });
