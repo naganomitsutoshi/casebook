@@ -873,7 +873,11 @@ const KEY = "casebook:v2";
 const PHOTO_DB = "casebook-photos";
 const PHOTO_STORE = "photos";
 const ROUTINE = LOGIC.ROUTINE;
-const todayISO = () => new Date().toISOString().slice(0,10);
+// ローカル日付（toISOString は UTC のため JST では 09:00 に日付が変わる不具合があった）
+const todayISO = () => {
+  const d = new Date();
+  return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+};
 const esc = (s) => String(s || "").replace(/[&<>"]/g, (c) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c]));
 const timeLabel = (iso) => new Date(iso).toLocaleTimeString([], { hour:"2-digit", minute:"2-digit" });
 

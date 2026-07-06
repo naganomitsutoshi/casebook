@@ -51,7 +51,9 @@ vm.runInContext(mainSrc, sandbox);
 (async () => {
   await new Promise(r => setTimeout(r, 20)); // boot() の非同期完了待ち
 
-  const today = new Date().toISOString().slice(0, 10);
+  // アプリ本体と同じローカル日付（UTC の toISOString とはズレうる）
+  const localISO = (d) => d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+  const today = localISO(new Date());
   const run = vm.runInContext.bind(null);
 
   // 症例を1件作ってフル描画を通す
@@ -72,7 +74,7 @@ vm.runInContext(mainSrc, sandbox);
   const checks = [
     ["renderListV21()", ["新規症例", "入院中", "case-row", "Trash", "theme-seg", "Export 連続", "累計", "dot-untouched", "progress-row"]],
     ["renderCaseV21()", ["Problem List", "To Do", "Waiting", "Contingency Plan", "Hooks", "tabs-bar", "症例ラベル", "入院日", "updateCaseLabel", "today-progress"]],
-    ["(VIEW.tab='log', renderCaseV21())", ["Log", "todoInput-" + JSON.stringify(new Date().toISOString().slice(0,10)).slice(1, 11)]],
+    ["(VIEW.tab='log', renderCaseV21())", ["Log", "todoInput-" + today]],
     ["(VIEW.tab='timeline', renderCaseV21())", ["Timeline", "band-inj", "tl-legend", "開始"]],
     ["renderTrash()", ["Trash"]]
   ];
@@ -99,7 +101,7 @@ vm.runInContext(mainSrc, sandbox);
   }
 
   // v6: 未来日付イベントが経過表に列として出る（イベント反映バグの回帰テスト）
-  const futureDate = new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10);
+  const futureDate = localISO(new Date(Date.now() + 3 * 86400000));
   vm.runInContext(`c.events.push({id:"e2", date:"${futureDate}", type:"surgery", title:"手術予定", note:""})`, sandbox);
   const tlHtml = vm.runInContext("(VIEW.tab='timeline', renderCaseV21())", sandbox);
   if (!tlHtml.includes("future") || !tlHtml.includes("手術予定") || !tlHtml.includes(futureDate.slice(5).replace("-", "/"))) {
