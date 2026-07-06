@@ -154,6 +154,19 @@ vm.runInContext(mainSrc, sandbox);
     if (listHtml.includes(banned)) { console.error("NG: 一覧に撤去済み要素「" + banned + "」が残存"); process.exit(1); }
   }
 
+  // v8.0: 退院済み症例は一覧・症例画面を描画しても days が増えない（汚染バグ回帰）
+  vm.runInContext(`
+    var cd = LOGIC.ensureCaseShape({ ageBand:"90代", sex:"F", cc:"心不全増悪", admittedAt:"2026-06-01", status:"discharged", dischargedAt:"2026-06-10",
+      days:[{date:"2026-06-10", todos:[{id:"t9", text:"残タスク", done:false}], waits:[{id:"w9", text:"病理結果", resolved:false}], hooks:[]}] });
+    DB.cases.push(cd);
+  `, sandbox);
+  const daysBefore = vm.runInContext("cd.days.length", sandbox);
+  vm.runInContext("VIEW={name:'list',caseId:null,tab:'today',filter:'all'}; renderListV21()", sandbox);
+  const dischargedCaseHtml = vm.runInContext("VIEW={name:'case',caseId:cd.id,tab:'today',filter:'all'}; renderCaseV21()", sandbox);
+  const daysAfter = vm.runInContext("cd.days.length", sandbox);
+  if (daysBefore !== daysAfter) { console.error("NG: 退院済み症例の描画で days が増える（汚染バグ再発）"); process.exit(1); }
+  if (!dischargedCaseHtml.includes("残タスク")) { console.error("NG: 退院済み症例の Today タブに最終日の内容が出ない"); process.exit(1); }
+
   // render() 本体もDOMスタブ上で例外なく通るか
   vm.runInContext("render()", sandbox);
   vm.runInContext("VIEW={name:'list',caseId:null,tab:'today',filter:'active'}; render()", sandbox);

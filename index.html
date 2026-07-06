@@ -605,6 +605,18 @@ function logicFactory(){
     return caseObj.days[caseObj.days.length - 1];
   }
 
+  // 内容（todos/waits/hooks いずれか）のある最終日。全て空なら最終日。
+  // 退院後に空の当日 day が追記されてしまった既存データでも、退院書き出し・
+  // 未完了表示が実データの最終日を見るための救済を兼ねる
+  function getLastMeaningfulDay(caseObj){
+    if(!caseObj || !Array.isArray(caseObj.days) || !caseObj.days.length){ return null; }
+    for(var i = caseObj.days.length - 1; i >= 0; i -= 1){
+      var d = caseObj.days[i];
+      if((d.todos && d.todos.length) || (d.waits && d.waits.length) || (d.hooks && d.hooks.length)){ return d; }
+    }
+    return caseObj.days[caseObj.days.length - 1];
+  }
+
   function ensureTodayDay(caseObj, today){
     var existing = getDay(caseObj, today);
     if(existing){ return existing; }
@@ -802,7 +814,7 @@ function logicFactory(){
     lines.push(c.summary.outcome || "");
     lines.push("");
     lines.push("## Unresolved Waiting");
-    var lastDay = getLatestDay(c);
+    var lastDay = getLastMeaningfulDay(c);
     var pendingWaits = lastDay ? lastDay.waits.filter(function(wait){ return !wait.resolved && wait.text; }).map(function(wait){ return wait.text; }) : [];
     if(pendingWaits.length){
       pendingWaits.forEach(function(text){ lines.push("- " + text); });
@@ -850,6 +862,7 @@ function logicFactory(){
     normalizeData:normalizeData,
     getDay:getDay,
     getLatestDay:getLatestDay,
+    getLastMeaningfulDay:getLastMeaningfulDay,
     ensureTodayDay:ensureTodayDay,
     rolloverCase:rolloverCase,
     purgeTrash:purgeTrash,
@@ -1115,8 +1128,13 @@ function currentCase(){
   return findCase(VIEW.caseId);
 }
 
+// active のみ当日 day を確保。discharged は days を変更せず「内容のある最終日」を
+// 参照する（v7 まで一覧描画だけで退院済み症例に空の当日 day が追記されるバグがあった）
 function currentDay(caseObj){
-  return LOGIC.ensureTodayDay(caseObj, todayISO());
+  if(caseObj.status === "active" && !caseObj.deletedAt){
+    return LOGIC.ensureTodayDay(caseObj, todayISO());
+  }
+  return LOGIC.getLastMeaningfulDay(caseObj) || LOGIC.makeEmptyDay(todayISO());
 }
 
 function renderSaveMeta(){
@@ -1663,6 +1681,7 @@ function copyDischargeExport(caseId){
 }
 
 function syncTodayView(caseObj){
+  if(caseObj.status !== "active" || caseObj.deletedAt){ return; }
   const rolled = LOGIC.rolloverCase(caseObj, todayISO());
   Object.assign(caseObj, rolled);
 }

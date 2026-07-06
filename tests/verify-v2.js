@@ -166,4 +166,17 @@ const pruned = L.pruneStatsDays({ "2026-01-01": { exported: true }, "2026-07-01"
 if (pruned["2026-01-01"] || !pruned["2026-07-01"] || pruned["bad-key"]) { console.error("NG: pruneStatsDays の剪定が仕様と違う"); process.exit(1); }
 console.log("v7 (prevDateISO / computeStreak / pruneStatsDays): OK");
 
+// 10) v8.0: 退院済み days 汚染の救済（getLastMeaningfulDay）
+if (typeof L.getLastMeaningfulDay !== "function") { console.error("NG: getLastMeaningfulDay が無い"); process.exit(1); }
+const cDis = mkCase();
+Object.assign(cDis, L.rolloverCase(cDis, "2026-07-04"));
+cDis.status = "discharged"; cDis.dischargedAt = "2026-07-04";
+// 汚染を再現: 退院後の描画で末尾に空の day が追記されてしまった既存データ
+cDis.days.push({ date: "2026-07-05", todos: [], waits: [], hooks: [] });
+const lm = L.getLastMeaningfulDay(L.ensureCaseShape(cDis));
+if (!lm || lm.date !== "2026-07-04") { console.error("NG: getLastMeaningfulDay が内容のある最終日を返さない"); process.exit(1); }
+const disPolluted = L.buildDischargeExport(cDis);
+if (!disPolluted.includes("培養結果")) { console.error("NG: 末尾に空 day があると Unresolved Waiting が消える"); process.exit(1); }
+console.log("v8.0 (getLastMeaningfulDay / polluted-days rescue): OK");
+
 console.log("ALL TESTS PASSED");
