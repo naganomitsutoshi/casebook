@@ -72,7 +72,7 @@ vm.runInContext(mainSrc, sandbox);
   `, sandbox);
 
   const checks = [
-    ["renderListV21()", ["新規症例", "入院中", "case-row", "Trash", "theme-seg", "Export 連続", "累計", "dot-untouched", "progress-row", "バックアップ", "復元", "handleRestoreInput"]],
+    ["renderListV21()", ["入院中", "case-row", "Trash", "theme-seg", "Export 連続", "累計", "dot-untouched", "progress-row", "バックアップ", "復元", "handleRestoreInput", "v8."]],
     ["renderCaseV21()", ["Problem List", "To Do", "Waiting", "Contingency Plan", "Hooks", "tabs-bar", "症例ラベル", "入院日", "updateCaseLabel", "today-progress", "Rm 402", "部屋番号", "Discharge Checklist", "toggleDcChecklist"]],
     ["(VIEW.tab='log', renderCaseV21())", ["Log", "todoInput-" + today]],
     ["(VIEW.tab='timeline', renderCaseV21())", ["Timeline", "band-inj", "tl-legend", "開始"]],
@@ -196,6 +196,36 @@ vm.runInContext(mainSrc, sandbox);
   if (!settingsRaw || !settingsRaw.includes("rxWeekdays")) { console.error("NG: 曜日設定が casebook:settings に保存されない"); process.exit(1); }
   const rxTodoAdded = vm.runInContext("c.days.some(d => d.todos.some(t => t.src === 'rx'))", sandbox);
   if (!rxTodoAdded) { console.error("NG: 当日曜日をONにしても rx To Do が注入されない"); process.exit(1); }
+
+  // v8.2: 一覧ツールバーから新規症例ボタンを撤去（New は下部ナビ／トップバー側）
+  const listNoNew = vm.runInContext("VIEW={name:'list',caseId:null,tab:'today',filter:'active'}; renderListV21()", sandbox);
+  if (listNoNew.includes("新規症例")) { console.error("NG: 一覧に新規症例ボタンが残存"); process.exit(1); }
+  if (!html.includes('onclick="newCaseModal()"')) { console.error("NG: New の入口（下部ナビ/トップバー）が無い"); process.exit(1); }
+
+  // v8.2: 空タイトルの追加は無反応でなくトーストで知らせる
+  vm.runInContext("VIEW={name:'case',caseId:c.id,tab:'today',filter:'active'}; renderCaseV21()", sandbox);
+  sandbox.document.getElementById("evTitle").value = "";
+  vm.runInContext("createEvent()", sandbox);
+  if (sandbox.document.getElementById("toast").textContent !== "タイトルを入力してください") {
+    console.error("NG: 空タイトル追加でフィードバックが出ない"); process.exit(1);
+  }
+  sandbox.document.getElementById("medName").value = "";
+  vm.runInContext("createMed()", sandbox);
+  if (sandbox.document.getElementById("toast").textContent !== "薬剤名を入力してください") {
+    console.error("NG: 薬剤名空でフィードバックが出ない"); process.exit(1);
+  }
+  // 正常追加でイベントが増え、成功トーストが出る
+  sandbox.document.getElementById("evTitle").value = "胸部CT";
+  sandbox.document.getElementById("evDate").value = futureDate;
+  sandbox.document.getElementById("evType").value = "test";
+  sandbox.document.getElementById("evNote").value = "";
+  const evBefore = vm.runInContext("c.events.length", sandbox);
+  vm.runInContext("createEvent()", sandbox);
+  if (vm.runInContext("c.events.length", sandbox) !== evBefore + 1) { console.error("NG: createEvent でイベントが追加されない"); process.exit(1); }
+  if (!sandbox.document.getElementById("toast").textContent.includes("イベントを追加")) { console.error("NG: イベント追加の成功トーストが出ない"); process.exit(1); }
+  const tlAfterCreate = vm.runInContext("(VIEW.tab='timeline', renderCaseV21())", sandbox);
+  if (!tlAfterCreate.includes("胸部CT")) { console.error("NG: 追加イベントが Timeline に出ない"); process.exit(1); }
+  vm.runInContext("VIEW.tab='today'", sandbox);
 
   // v8.1: Order 2段階（チップ表示・done→Waiting 自動生成・1回限り）
   const todayTabOrder = vm.runInContext("VIEW={name:'case',caseId:c.id,tab:'today',filter:'active'}; renderCaseV21()", sandbox);

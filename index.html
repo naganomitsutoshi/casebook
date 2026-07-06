@@ -107,11 +107,11 @@
   .spacer{flex:1}
   .header-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
   .pill-btn,.tab-btn,.chip,.btn{
-    min-height:44px;border-radius:10px;transition:background .15s ease,border-color .15s ease,color .15s ease;
+    min-height:38px;border-radius:10px;transition:background .15s ease,border-color .15s ease,color .15s ease;
   }
   .pill-btn,.tab-btn,.chip{
     border:1px solid var(--line);background:var(--card);
-    padding:0 14px;display:inline-flex;align-items:center;gap:8px;
+    padding:0 12px;display:inline-flex;align-items:center;gap:6px;
   }
   @media(hover:hover){
     .pill-btn:hover,.tab-btn:hover,.chip:hover{border-color:var(--accent);color:var(--accent)}
@@ -122,13 +122,13 @@
   }
   .btn{
     display:inline-flex;align-items:center;justify-content:center;gap:8px;
-    padding:0 16px;font-weight:700;
+    padding:0 14px;font-weight:700;font-size:13px;
   }
   .btn-primary{background:var(--accent);color:var(--on-accent)}
   .btn-ghost{background:var(--card);border:1px solid var(--line)}
   .btn-danger{background:var(--danger-soft);color:var(--danger);border:1px solid var(--danger-line)}
   .btn-block{width:100%}
-  .chip,.tab-btn,.pill-btn{font-size:13px;font-weight:600}
+  .chip,.tab-btn,.pill-btn{font-size:12px;font-weight:600}
   .chip.on{background:var(--ink);color:var(--paper);border-color:var(--ink)}
   .count-badge{
     min-width:22px;height:22px;padding:0 7px;border-radius:999px;
@@ -144,11 +144,11 @@
   }
   .bottombar-in{display:flex;gap:6px;max-width:640px;margin:0 auto}
   .bnav{
-    position:relative;flex:1;min-height:52px;border-radius:var(--r-m);
+    position:relative;flex:1;min-height:46px;border-radius:var(--r-m);
     display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
     font-size:11px;font-weight:700;color:var(--ink-soft);
   }
-  .bnav .ico{font-size:18px;line-height:1.2}
+  .bnav .ico{font-size:16px;line-height:1.2}
   .bnav.on{color:var(--accent);background:var(--accent-soft)}
   .bnav .count-badge{
     position:absolute;top:2px;right:calc(50% - 30px);
@@ -171,7 +171,7 @@
   }
   .linklike{
     color:var(--ink-soft);font-size:13px;font-weight:700;
-    min-height:44px;display:inline-flex;align-items:center;gap:4px;
+    min-height:38px;display:inline-flex;align-items:center;gap:4px;
   }
   .theme-seg{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
 .progress{flex:1;height:5px;border-radius:3px;background:var(--line-soft);overflow:hidden;min-width:80px}
@@ -216,7 +216,7 @@
   }
 
   .backline{display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap}
-  .backlink{font-size:13px;font-weight:700;color:var(--ink-soft);min-height:44px;display:inline-flex;align-items:center}
+  .backlink{font-size:13px;font-weight:700;color:var(--ink-soft);min-height:38px;display:inline-flex;align-items:center}
   .shell{
     display:grid;grid-template-columns:minmax(0,1.25fr) minmax(300px,.75fr);gap:14px;
     align-items:start;
@@ -263,12 +263,12 @@
     padding:2px 2px 2px 6px;
   }
   .row-check{
-    width:44px;height:44px;border-radius:var(--r-s);flex-shrink:0;
+    width:40px;height:40px;border-radius:var(--r-s);flex-shrink:0;
     display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;
     position:relative;
   }
   .row-check::before{
-    content:"";width:24px;height:24px;border-radius:7px;border:2px solid var(--line);
+    content:"";width:22px;height:22px;border-radius:7px;border:2px solid var(--line);
     position:absolute;
   }
   .row-check span{position:relative;z-index:1}
@@ -287,13 +287,13 @@
   .row-input:focus{outline:none;background:var(--field);box-shadow:0 0 0 2px var(--accent-soft)}
   .row-input.muted{text-decoration:line-through;color:var(--ink-faint)}
   .row-del{
-    width:44px;height:44px;flex-shrink:0;border-radius:var(--r-s);
+    width:38px;height:40px;flex-shrink:0;border-radius:var(--r-s);
     display:flex;align-items:center;justify-content:center;
     color:var(--ink-faint);font-size:18px;
   }
   .inline-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
   .compact-btn{
-    min-height:36px;padding:0 12px;border-radius:var(--r-s);border:1px solid var(--line);
+    min-height:31px;padding:0 10px;border-radius:var(--r-s);border:1px solid var(--line);
     background:var(--card);font-size:12px;font-weight:700
   }
 
@@ -321,7 +321,7 @@
 
   .routine-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
   .routine-btn{
-    min-height:52px;padding:10px 12px;border-radius:var(--r-m);border:1px solid var(--line);
+    min-height:46px;padding:8px 10px;border-radius:var(--r-m);border:1px solid var(--line);
     background:var(--card);text-align:left;display:flex;gap:10px
   }
   .routine-btn.on{background:var(--accent-soft);border-color:var(--accent-line)}
@@ -446,6 +446,7 @@
       </div>
       <div class="spacer"></div>
       <div class="header-actions">
+        <button class="pill-btn" onclick="newCaseModal()">New</button>
         <button class="pill-btn" onclick="go('week')">Week</button>
         <button class="pill-btn" onclick="copyDailyExport()">
           Export
@@ -1027,6 +1028,7 @@ if(typeof module !== "undefined"){ module.exports = LOGIC; }
 </script>
 
 <script>
+const APP_VERSION = "v8.2";  // 一覧下部に表示。実機がどの版を配信されているかの確認用
 const KEY = "casebook:v2";
 const PHOTO_DB = "casebook-photos";
 const PHOTO_STORE = "photos";
@@ -1678,8 +1680,9 @@ function toggleDcChecklist(caseId, key){
 
 function createMed(){
   const caseObj = currentCase();
-  const name = document.getElementById("medName").value.trim();
-  if(!name){ return; }
+  const nameInput = document.getElementById("medName");
+  const name = nameInput.value.trim();
+  if(!name){ toast("薬剤名を入力してください"); nameInput.focus(); return; }
   caseObj.meds.unshift({
     id:LOGIC.makeId(),
     name,
@@ -1689,6 +1692,7 @@ function createMed(){
     note:document.getElementById("medNote").value.trim()
   });
   persist();
+  toast("薬剤を追加: " + name);
 }
 
 function editMedModal(medId){
@@ -1716,7 +1720,8 @@ function editMedModal(medId){
 function saveMedEdit(medId){
   const med = currentCase().meds.find((m) => m.id === medId);
   const name = document.getElementById("emName").value.trim();
-  if(!med || !name){ return; }
+  if(!med){ return; }
+  if(!name){ toast("薬剤名を入力してください"); return; }
   med.name = name;
   med.route = document.getElementById("emRoute").value;
   med.startDate = document.getElementById("emStart").value || todayISO();
@@ -1739,16 +1744,19 @@ function doDeleteMed(medId){
 
 function createEvent(){
   const caseObj = currentCase();
-  const title = document.getElementById("evTitle").value.trim();
-  if(!title){ return; }
+  const titleInput = document.getElementById("evTitle");
+  const title = titleInput.value.trim();
+  if(!title){ toast("タイトルを入力してください"); titleInput.focus(); return; }
+  const date = document.getElementById("evDate").value || todayISO();
   caseObj.events.unshift({
     id:LOGIC.makeId(),
-    date:document.getElementById("evDate").value || todayISO(),
+    date,
     type:document.getElementById("evType").value,
     title,
     note:document.getElementById("evNote").value.trim()
   });
   persist();
+  toast("イベントを追加: " + date.slice(5).replace("-","/") + " " + title);
 }
 
 function editEventModal(eventId){
@@ -1774,7 +1782,8 @@ function editEventModal(eventId){
 function saveEventEdit(eventId){
   const eventObj = currentCase().events.find((e) => e.id === eventId);
   const title = document.getElementById("eeTitle").value.trim();
-  if(!eventObj || !title){ return; }
+  if(!eventObj){ return; }
+  if(!title){ toast("タイトルを入力してください"); return; }
   eventObj.date = document.getElementById("eeDate").value || todayISO();
   eventObj.type = document.getElementById("eeType").value;
   eventObj.title = title;
@@ -2117,7 +2126,6 @@ function renderListV21(){
     ${dcPending ? `<div class="nudge"><span>退院書き出しが未実施の症例が ${dcPending} 件</span><button class="btn btn-ghost" onclick="setFilter('discharged')">表示</button></div>` : ""}
     ${showNudge ? `<div class="nudge"><span>今日の Export がまだです</span><button class="btn btn-ghost" onclick="copyDailyExport()">Export</button></div>` : ""}
     <div class="toolbar">
-      <button class="btn btn-primary" onclick="newCaseModal()">新規症例</button>
       <button class="chip ${VIEW.filter === "active" ? "on" : ""}" onclick="setFilter('active')">入院中</button>
       <button class="chip ${VIEW.filter === "discharged" ? "on" : ""}" onclick="setFilter('discharged')">退院</button>
       <button class="chip ${VIEW.filter === "all" ? "on" : ""}" onclick="setFilter('all')">すべて</button>
@@ -2135,6 +2143,7 @@ function renderListV21(){
     </div>
     <div class="list-foot">
       <span class="panel-sub">累計 ${DB.cases.filter((c) => !c.deletedAt).length} 症例 ・ 記録 ${STATS.totals.recordDays || 0} 日</span>
+      <span class="panel-sub mono">${APP_VERSION}</span>
     </div>
     <div class="list-foot">
       <span class="panel-sub">定期処方曜日（当日朝に To Do 自動追加）</span>
@@ -2393,13 +2402,13 @@ function renderTodayTabV21(caseObj, day){
           <div class="panel-head"><h2>Medications</h2><div class="panel-sub">薬剤・内服 / 注射</div></div>
           <div class="panel-body">
             <div class="modal-grid">
-              <input id="medName" class="input" placeholder="薬剤名">
+              <input id="medName" class="input" placeholder="薬剤名" enterkeyhint="done" onkeydown="if(event.key==='Enter'){createMed()}">
               <select id="medRoute" class="select"><option value="oral">内服</option><option value="inj">注射</option></select>
               <input id="medStart" class="input" type="date" value="${todayISO()}">
               <input id="medEnd" class="input" type="date">
             </div>
             <div style="margin-top:10px">
-              <input id="medNote" class="input" placeholder="メモ">
+              <input id="medNote" class="input" placeholder="メモ" enterkeyhint="done" onkeydown="if(event.key==='Enter'){createMed()}">
             </div>
             <div class="inline-actions" style="margin-top:10px"><button class="btn btn-ghost" onclick="createMed()">追加</button></div>
             <div class="med-list" style="margin-top:14px">${renderMedList(caseObj)}</div>
@@ -2420,8 +2429,8 @@ function renderTodayTabV21(caseObj, day){
                 <option value="other">その他</option>
               </select>
             </div>
-            <div style="margin-top:10px"><input id="evTitle" class="input" placeholder="タイトル"></div>
-            <div style="margin-top:10px"><input id="evNote" class="input" placeholder="メモ"></div>
+            <div style="margin-top:10px"><input id="evTitle" class="input" placeholder="タイトル" enterkeyhint="done" onkeydown="if(event.key==='Enter'){createEvent()}"></div>
+            <div style="margin-top:10px"><input id="evNote" class="input" placeholder="メモ" enterkeyhint="done" onkeydown="if(event.key==='Enter'){createEvent()}"></div>
             <div class="inline-actions" style="margin-top:10px"><button class="btn btn-ghost" onclick="createEvent()">追加</button></div>
             <div class="event-list" style="margin-top:14px">${renderEventList(caseObj)}</div>
           </div>
@@ -2490,7 +2499,7 @@ function renderTodoLike(caseObj, day, kind){
   }[kind];
   const items = day[config.key];
   const showOrderChip = kind === "todo" && day.date === todayISO() && caseObj.status === "active";
-  const srcTag = (item) => item.src === "order" ? `<span class="flag todo" style="flex-shrink:0">Ord</span>` : item.src === "rx" ? `<span class="flag" style="flex-shrink:0">定期</span>` : "";
+  const srcTag = (item) => item.src === "order" ? `<span class="flag todo" style="flex-shrink:0" title="Orderチップで追加した検査。doneでWaitingに結果確認を自動追加">オーダー</span>` : item.src === "rx" ? `<span class="flag" style="flex-shrink:0">定期</span>` : "";
   return `
     <div class="list">
       ${items.length ? items.map((item) => `
