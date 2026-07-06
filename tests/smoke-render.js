@@ -60,7 +60,7 @@ vm.runInContext(mainSrc, sandbox);
   vm.runInContext(`
     var c = LOGIC.ensureCaseShape({
       ageBand:"80代", sex:"M", cc:"誤嚥性肺炎", admittedAt:"${today}",
-      severity:"watcher", patientSummary:"80代男性、誤嚥性肺炎。抗菌薬治療中",
+      severity:"watcher", patientSummary:"80代男性、誤嚥性肺炎。抗菌薬治療中", room:"402",
       contingency:[{id:"x1", text:"夜間発熱→血培"}],
       problems:[{id:"p1", title:"肺炎", assessment:"改善傾向", active:true}],
       meds:[{id:"m1", name:"ABPC/SBT", route:"inj", startDate:"${today}", endDate:null, note:""}],
@@ -73,7 +73,7 @@ vm.runInContext(mainSrc, sandbox);
 
   const checks = [
     ["renderListV21()", ["新規症例", "入院中", "case-row", "Trash", "theme-seg", "Export 連続", "累計", "dot-untouched", "progress-row", "バックアップ", "復元", "handleRestoreInput"]],
-    ["renderCaseV21()", ["Problem List", "To Do", "Waiting", "Contingency Plan", "Hooks", "tabs-bar", "症例ラベル", "入院日", "updateCaseLabel", "today-progress"]],
+    ["renderCaseV21()", ["Problem List", "To Do", "Waiting", "Contingency Plan", "Hooks", "tabs-bar", "症例ラベル", "入院日", "updateCaseLabel", "today-progress", "Rm 402", "部屋番号"]],
     ["(VIEW.tab='log', renderCaseV21())", ["Log", "todoInput-" + today]],
     ["(VIEW.tab='timeline', renderCaseV21())", ["Timeline", "band-inj", "tl-legend", "開始"]],
     ["renderTrash()", ["Trash"]]

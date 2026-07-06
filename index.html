@@ -530,6 +530,7 @@ function logicFactory(){
       ageBand:"",
       sex:"",
       cc:"",
+      room:"",
       admittedAt:"",
       dischargedAt:null,
       admission:{ note:"", photoIds:[], routine:{} },
@@ -547,6 +548,8 @@ function logicFactory(){
     out.admission.photoIds = Array.isArray(out.admission.photoIds) ? out.admission.photoIds.slice() : [];
     out.admission.routine = normalizeRoutine(out.admission.routine);
     out.patientSummary = typeof out.patientSummary === "string" ? out.patientSummary : "";
+    // 部屋番号は識別性の低い運用情報のみ（氏名不可）。書き出しには載せない
+    out.room = typeof out.room === "string" ? out.room : "";
     out.contingency = Array.isArray(out.contingency) ? out.contingency.map(function(item){
       return { id:item && item.id ? item.id : makeId(), text:item && item.text ? String(item.text) : "" };
     }).filter(function(item){ return item.text; }) : [];
@@ -1955,7 +1958,7 @@ function renderCaseCardV21(caseObj){
     <article class="case-row sev-${sev || "none"}" onclick="go('case','${caseObj.id}')">
       <div class="case-row-top">
         <div class="case-label">${caseObj.status === "active" && !touchedToday(caseObj.id) ? `<span class="dot-untouched" title="今日未更新"></span>` : ""}${esc(LOGIC.formatLabel(caseObj) || "未設定")}</div>
-        <div class="case-day mono">病日 ${stats.dayNumber}</div>
+        <div class="case-day mono">${caseObj.room ? "Rm " + esc(caseObj.room) + " ・ " : ""}病日 ${stats.dayNumber}</div>
       </div>
       ${caseObj.patientSummary ? `<div class="case-sum">${esc(caseObj.patientSummary)}</div>` : ""}
       <div class="case-flags">
@@ -1987,6 +1990,7 @@ function renderCaseV21(){
             <div class="meta">
               ${caseObj.severity ? `<span class="flag severity-${caseObj.severity}">${esc(LOGIC.severityLabel(caseObj.severity))}</span>` : `<span class="flag">重症度未設定</span>`}
               <span>病日 ${LOGIC.dayNumber(caseObj, todayISO())}</span>
+              ${caseObj.room ? `<span class="mono">Rm ${esc(caseObj.room)}</span>` : ""}
               <span class="mono">入院 ${esc(caseObj.admittedAt || "")}</span>
               ${caseObj.dischargedAt ? `<span class="mono">退院 ${esc(caseObj.dischargedAt)}</span>` : ""}
             </div>
@@ -2021,6 +2025,10 @@ function renderCaseV21(){
               <label class="panel-sub">退院日</label>
               <input class="input" type="date" value="${esc(caseObj.dischargedAt)}" onchange="updateCaseDate('${caseObj.id}','dischargedAt',this.value)">
             </div>` : ""}
+          </div>
+          <div style="margin-top:8px">
+            <label class="panel-sub">部屋番号（任意・部屋番号のみ、氏名は入れない。書き出しには載らない）</label>
+            <input class="input" placeholder="例: 402" value="${esc(caseObj.room || "")}" oninput="updateCaseText('${caseObj.id}','room',this.value)">
           </div>
           <label class="panel-sub" style="display:block;margin-top:12px">患者サマリ（1〜2行・申し送り用）</label>
           <textarea class="textarea" rows="2" placeholder="80代男性、誤嚥性肺炎で入院。抗菌薬治療中、嚥下評価待ち" oninput="updatePatientSummary('${caseObj.id}',this.value)">${esc(caseObj.patientSummary || "")}</textarea>

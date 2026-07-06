@@ -188,4 +188,14 @@ if (L.parseBackup(JSON.stringify({ app: "other", data: {} })).ok) { console.erro
 if (L.parseBackup(JSON.stringify({ app: "casebook" })).ok) { console.error("NG: parseBackup が data 無しを受理する"); process.exit(1); }
 console.log("v8.0 (parseBackup): OK");
 
+// 12) v8.0: 部屋番号は保持されるが書き出しには出ない
+const cRoom = mkCase();
+cRoom.room = "R999X";
+const shapedRoom = L.ensureCaseShape(cRoom);
+if (shapedRoom.room !== "R999X") { console.error("NG: ensureCaseShape が room を保全しない"); process.exit(1); }
+Object.assign(cRoom, L.rolloverCase(cRoom, "2026-07-04"));
+if (L.buildDailyExport({ version: 2, cases: [cRoom] }, "2026-07-04").includes("R999X")) { console.error("NG: 日次書き出しに部屋番号が混入"); process.exit(1); }
+if (L.buildDischargeExport(cRoom).includes("R999X")) { console.error("NG: 退院書き出しに部屋番号が混入"); process.exit(1); }
+console.log("v8.0 (room: persisted, never exported): OK");
+
 console.log("ALL TESTS PASSED");
