@@ -1006,6 +1006,77 @@ const Photos = {
   }
 };
 
+// 自動バックアップ（写真DBとは独立のDB。既存 casebook-photos の version bump 事故を避ける）
+const BACKUP_DB = "casebook-backups";
+const BACKUP_STORE = "snapshots";
+const BACKUP_KEEP = 7;
+
+const Backups = {
+  dbp:null,
+  async db(){
+    if(this.dbp){ return this.dbp; }
+    this.dbp = new Promise((resolve, reject) => {
+      const req = indexedDB.open(BACKUP_DB, 1);
+      req.onupgradeneeded = function(){
+        req.result.createObjectStore(BACKUP_STORE, { keyPath:"date" });
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    return this.dbp;
+  },
+  async get(date){
+    const db = await this.db();
+    return new Promise((resolve, reject) => {
+      const req = db.transaction(BACKUP_STORE, "readonly").objectStore(BACKUP_STORE).get(date);
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => reject(req.error);
+    });
+  },
+  async put(date, payload){
+    const db = await this.db();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(BACKUP_STORE, "readwrite");
+      tx.objectStore(BACKUP_STORE).put({ date, payload, createdAt:LOGIC.isoNow() });
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  },
+  async keys(){
+    const db = await this.db();
+    return new Promise((resolve, reject) => {
+      const req = db.transaction(BACKUP_STORE, "readonly").objectStore(BACKUP_STORE).getAllKeys();
+      req.onsuccess = () => resolve((req.result || []).slice().sort());
+      req.onerror = () => reject(req.error);
+    });
+  },
+  async remove(date){
+    const db = await this.db();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(BACKUP_STORE, "readwrite");
+      tx.objectStore(BACKUP_STORE).delete(date);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  },
+  async prune(){
+    const keys = await this.keys();
+    const excess = keys.slice(0, Math.max(0, keys.length - BACKUP_KEEP));
+    for(const k of excess){ await this.remove(k); }
+  },
+  // 1日1回、その日最初に開いた時点の状態を保存。force=true は復元直前の退避用
+  async snapshotToday(force){
+    const date = todayISO();
+    if(!force){
+      const existing = await this.get(date);
+      if(existing){ return false; }
+    }
+    await this.put(date, JSON.stringify(buildBackupPayload()));
+    await this.prune();
+    return true;
+  }
+};
+
 let DB = Store.empty();
 let VIEW = { name:"list", caseId:null, tab:"today", filter:"active" };
 let SAVE_OK = true;
@@ -1737,6 +1808,7 @@ async function doRestoreBackup(){
   PENDING_RESTORE = null;
   closeModal();
   if(!parsed){ return; }
+  try { await Backups.snapshotToday(true); } catch(e) {}  // 誤復元の保険: 直前の状態を当日スナップショットへ退避
   DB = parsed.data;
   if(parsed.stats){
     STATS = { days:parsed.stats.days, totals:Object.assign({ recordDays:0 }, parsed.stats.totals) };
@@ -1750,6 +1822,36 @@ async function doRestoreBackup(){
   if(["auto","light","dark"].includes(parsed.theme)){ setTheme(parsed.theme); }
   else { render(); }
   toast("復元しました");
+}
+
+async function showAutoBackups(){
+  let dates = [];
+  try { dates = (await Backups.keys()).reverse(); } catch(e) {}
+  showModal(`
+    <h3>自動バックアップ</h3>
+    <p class="sub">毎日最初に開いた時点の状態を${BACKUP_KEEP}日分保存。日付を選んで復元（写真は対象外）。</p>
+    <div class="list">
+      ${dates.length ? dates.map((d) => `
+        <div class="row-item">
+          <span class="row-dot"></span>
+          <div class="row-input mono" style="cursor:default">${esc(d)}</div>
+          <button class="compact-btn" style="margin-right:6px" onclick="restoreAutoBackup('${esc(d)}')">復元</button>
+        </div>
+      `).join("") : `<div class="empty">まだありません。</div>`}
+    </div>
+    <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">閉じる</button></div>
+  `);
+}
+
+async function restoreAutoBackup(date){
+  let record = null;
+  try { record = await Backups.get(date); } catch(e) {}
+  if(!record){ toast("バックアップが見つかりません"); return; }
+  const parsed = LOGIC.parseBackup(record.payload);
+  if(!parsed.ok){ toast("復元できません: " + parsed.error); return; }
+  PENDING_RESTORE = parsed;
+  const n = parsed.data.cases.filter((c) => !c.deletedAt).length;
+  confirmAction("自動バックアップから復元", date + " 時点・症例 " + n + " 件に置き換えます。現在のデータは上書きされます。", "doRestoreBackup()", "復元");
 }
 
 function copyDischargeExport(caseId){
@@ -1831,6 +1933,7 @@ function renderListV21(){
       <div class="theme-seg">
         <button class="chip" onclick="downloadBackup()">バックアップ</button>
         <label class="chip file-btn">復元<input type="file" accept="application/json,.json" onchange="handleRestoreInput(this)"></label>
+        <button class="chip" onclick="showAutoBackups()">自動</button>
       </div>
     </div>
     <div class="list-foot">
@@ -2362,6 +2465,7 @@ async function boot(){
   SAVE_OK = await Store.save(DB);
   LAST_SAVE_AT = new Date().toISOString();
   render();
+  Backups.snapshotToday(false).catch(() => {});  // 待たない（IndexedDB 不調でも起動を止めない）
   document.addEventListener("visibilitychange", () => {
     if(document.visibilityState === "visible"){
       let changed = false;
