@@ -866,6 +866,14 @@ function logicFactory(){
     } else {
       lines.push("- なし");
     }
+    lines.push("");
+    lines.push("## Unresolved To Do");
+    var pendingTodos = lastDay ? lastDay.todos.filter(function(todo){ return !todo.done && todo.text; }).map(function(todo){ return todo.text; }) : [];
+    if(pendingTodos.length){
+      pendingTodos.forEach(function(text){ lines.push("- " + text); });
+    } else {
+      lines.push("- なし");
+    }
     return lines.join("\n");
   }
 
@@ -2039,8 +2047,9 @@ function renderCaseCardV21(caseObj){
         ${caseObj.status !== "active" ? `<span class="flag">退院</span>` : ""}
         ${caseObj.status === "active" && caseObj.plannedDischargeAt ? `<span class="flag">退院予定 ${esc(caseObj.plannedDischargeAt.slice(5).replace("-","/"))}</span>` : ""}
         ${dischargeExportPending(caseObj) ? `<span class="flag wait">書き出し未</span>` : ""}
-        ${stats.todoOpen ? `<span class="flag todo">To Do ${stats.todoOpen}</span>` : ""}
-        ${stats.waitOpen ? `<span class="flag wait">Waiting ${stats.waitOpen}</span>` : ""}
+        ${caseObj.status === "active" && stats.todoOpen ? `<span class="flag todo">To Do ${stats.todoOpen}</span>` : ""}
+        ${caseObj.status === "active" && stats.waitOpen ? `<span class="flag wait">Waiting ${stats.waitOpen}</span>` : ""}
+        ${caseObj.status !== "active" && (stats.todoOpen + stats.waitOpen) ? `<span class="flag wait">残 ${stats.todoOpen + stats.waitOpen}</span>` : ""}
         ${noOpen && caseObj.status === "active" ? `<span class="flag clear">未処理なし</span>` : ""}
       </div>
     </article>
@@ -2136,14 +2145,38 @@ function renderCaseV21(){
   `;
 }
 
+// 退院済み症例の Today タブ最上部: 最終記録日の未完了 To Do / 未解消 Waiting をチェックで消し込む
+function renderPendingAfterDischarge(caseObj, day){
+  const pendingTodos = day.todos.filter((t) => !t.done);
+  const pendingWaits = day.waits.filter((w) => !w.resolved);
+  if(!pendingTodos.length && !pendingWaits.length){
+    return `<section class="panel"><div class="panel-head"><h2>Pending after discharge</h2><div class="panel-sub">退院後未完了・なし</div></div></section>`;
+  }
+  const row = (kind, item, doneField) => `
+    <div class="row-item">
+      <button class="row-check ${kind === "wait" ? "" : ""}" onclick="updateTextItem('${caseObj.id}','${day.date}','${kind}','${item.id}','${doneField}',true)" aria-label="完了にする"><span></span></button>
+      <div class="row-input" style="cursor:default">${esc(item.text)}${kind === "wait" ? ` <span class="panel-sub">(Waiting)</span>` : ""}</div>
+    </div>`;
+  return `
+    <section class="panel">
+      <div class="panel-head"><h2>Pending after discharge</h2><div class="panel-sub">退院後未完了（最終記録 ${esc(day.date)}）・チェックで消し込み</div></div>
+      <div class="panel-body list">
+        ${pendingTodos.map((t) => row("todo", t, "done")).join("")}
+        ${pendingWaits.map((w) => row("wait", w, "resolved")).join("")}
+      </div>
+    </section>`;
+}
+
 function renderTodayTabV21(caseObj, day){
   const admitExpanded = caseObj.admittedAt === todayISO();
+  const discharged = caseObj.status !== "active";
   const todoDone = day.todos.filter((t) => t.done).length;
   const todoAll = day.todos.length;
   return `
-    ${todoAll ? `<div class="today-progress"><div class="progress"><i style="width:${Math.round(todoDone / todoAll * 100)}%"></i></div><span class="panel-sub mono">To Do ${todoDone}/${todoAll}</span></div>` : ""}
+    ${!discharged && todoAll ? `<div class="today-progress"><div class="progress"><i style="width:${Math.round(todoDone / todoAll * 100)}%"></i></div><span class="panel-sub mono">To Do ${todoDone}/${todoAll}</span></div>` : ""}
     <section class="shell" style="margin-top:14px">
       <div class="stack">
+        ${discharged ? renderPendingAfterDischarge(caseObj, day) : ""}
         <section class="panel">
           <div class="panel-head"><h2>Problem List</h2><div class="panel-sub">問題リスト</div></div>
           <div class="panel-body list">

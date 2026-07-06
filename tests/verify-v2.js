@@ -227,4 +227,13 @@ if (!disDc.includes("## Discharge Checklist")) { console.error("NG: 退院書き
 if (!disDc.includes("- [x] 退院サマリ") || !disDc.includes("- [x] 外来フォロー予約") || !disDc.includes("- [ ] 退院時処方")) { console.error("NG: チェック状態が書き出しに反映されない"); process.exit(1); }
 console.log("v8.0 (DC_ROUTINE / discharge checklist export): OK");
 
+// 15) v8.0: 退院書き出しの Unresolved To Do（最終有内容日の未完了のみ）
+const cUt = mkCase();
+Object.assign(cUt, L.rolloverCase(cUt, "2026-07-04"));
+const disUt = L.buildDischargeExport(cUt);
+const utSection = disUt.slice(disUt.indexOf("## Unresolved To Do"));
+if (!utSection.includes("未完の仕事")) { console.error("NG: Unresolved To Do に未完了タスクが出ない"); process.exit(1); }
+if (utSection.includes("済んだ仕事")) { console.error("NG: Unresolved To Do に完了済みが混入"); process.exit(1); }
+console.log("v8.0 (Unresolved To Do in discharge export): OK");
+
 console.log("ALL TESTS PASSED");

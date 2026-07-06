@@ -166,6 +166,12 @@ vm.runInContext(mainSrc, sandbox);
   const daysAfter = vm.runInContext("cd.days.length", sandbox);
   if (daysBefore !== daysAfter) { console.error("NG: 退院済み症例の描画で days が増える（汚染バグ再発）"); process.exit(1); }
   if (!dischargedCaseHtml.includes("残タスク")) { console.error("NG: 退院済み症例の Today タブに最終日の内容が出ない"); process.exit(1); }
+  if (!dischargedCaseHtml.includes("Pending after discharge") || !dischargedCaseHtml.includes("病理結果")) {
+    console.error("NG: 退院済み症例に Pending after discharge パネルが出ない"); process.exit(1);
+  }
+  if (dischargedCaseHtml.includes("today-progress")) { console.error("NG: 退院済み症例に進捗バーが出る"); process.exit(1); }
+  const listAllHtml = vm.runInContext("VIEW={name:'list',caseId:null,tab:'today',filter:'all'}; renderListV21()", sandbox);
+  if (!listAllHtml.includes("残 2")) { console.error("NG: 退院済みカードに 残 n フラグが出ない"); process.exit(1); }
 
   // v8.0: 退院予定日の表示（編集欄・ヘッダmeta・カードフラグ）と退院書き出しナッジ
   vm.runInContext("c.plannedDischargeAt = '2099-01-01'; VIEW={name:'case',caseId:c.id,tab:'today',filter:'active'}; VIEW.caseEdit=true", sandbox);
