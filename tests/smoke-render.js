@@ -72,7 +72,7 @@ vm.runInContext(mainSrc, sandbox);
   `, sandbox);
 
   const checks = [
-    ["renderListV21()", ["入院中", "case-row", "Trash", "theme-seg", "Export 連続", "累計", "dot-untouched", "progress-row", "バックアップ", "復元", "handleRestoreInput", "v8."]],
+    ["renderListV21()", ["入院中", "case-row", "Trash", "theme-seg", "Export 連続", "累計", "dot-untouched", "progress-row", "バックアップ", "復元", "handleRestoreInput", "v9."]],
     ["renderCaseV21()", ["Problem List", "To Do", "Waiting", "Contingency Plan", "Hooks", "tabs-bar", "症例ラベル", "入院日", "updateCaseLabel", "today-progress", "Rm 402", "部屋番号", "Discharge Checklist", "toggleDcChecklist"]],
     ["(VIEW.tab='log', renderCaseV21())", ["Log", "todoInput-" + today]],
     ["(VIEW.tab='timeline', renderCaseV21())", ["Timeline", "band-inj", "tl-legend", "開始"]],
@@ -249,6 +249,28 @@ vm.runInContext(mainSrc, sandbox);
     console.error("NG: Week ビューに当日イベントが出ない"); process.exit(1);
   }
   if (!html.includes('data-nav="week"')) { console.error("NG: 下部ナビに Week が無い"); process.exit(1); }
+
+  // v9: カード型一覧（本文表示・カード上チェック・クイック追加・折りたたみ）
+  const listV9 = vm.runInContext("VIEW={name:'list',caseId:null,tab:'today',filter:'active'}; renderListV21()", sandbox);
+  for (const n of ["data-case-card", "card-todo", "採血", "quickAddTodo", "card-quick", "cardCheck"]) {
+    if (!listV9.includes(n)) { console.error("NG: v9カードに「" + n + "」が無い"); process.exit(1); }
+  }
+  vm.runInContext(`
+    var v9day = LOGIC.ensureTodayDay(c, "${today}");
+    v9day.todos.push({ id:"v9t", text:"カルテ記載", done:false });
+    cardCheck(c.id, "${today}", "todo", "v9t", "done");
+  `, sandbox);
+  if (!vm.runInContext(`LOGIC.getDay(c, "${today}").todos.find(t => t.id === "v9t").done`, sandbox)) {
+    console.error("NG: cardCheck で done にならない"); process.exit(1);
+  }
+  vm.runInContext(`quickAddTodo(c.id, { value: "一覧から追加" })`, sandbox);
+  if (!vm.runInContext(`LOGIC.getDay(c, "${today}").todos.some(t => t.text === "一覧から追加")`, sandbox)) {
+    console.error("NG: quickAddTodo で追加されない"); process.exit(1);
+  }
+  const caseV9 = vm.runInContext("VIEW={name:'case',caseId:c.id,tab:'today',filter:'active'}; renderCaseV21()", sandbox);
+  for (const n of ['id="medsBody"', 'id="eventsBody"', "Medications（", "Events（"]) {
+    if (!caseV9.includes(n)) { console.error("NG: v9折りたたみ「" + n + "」が無い"); process.exit(1); }
+  }
 
   // render() 本体もDOMスタブ上で例外なく通るか
   vm.runInContext("render()", sandbox);

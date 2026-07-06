@@ -1,5 +1,5 @@
 ﻿<!DOCTYPE html>
-<!-- Casebook v8: local-only inpatient tracker, now a daily-ward tool. v8.0: local-date fix (was UTC), discharged-days pollution fix, manual+auto JSON backup (photos excluded), room number (never exported), planned-discharge auto-fire on open, discharge checklist, post-discharge pending panel. v8.1: week view (+followup event type), weekday rx reminder (casebook:settings), two-stage order tracking (src/promoted), PWA shell (manifest/sw/icons; app itself stays a single HTML; SW is network-first for navigate — kill switch in HANDOFF §20). Storage key casebook:v2 unchanged, fields additive only. v7: gamified input nudges (casebook:stats). Implemented directly by Claude (Fable 5), no Codex. -->
+<!-- Casebook v9: local-only inpatient tracker. v9 "cards that clear without opening": list cards show open task texts (max 3) with on-card check-off (Waiting = amber box), severity as card tint, next-event/discharge chips, quick-add line per card, card-level partial re-render (no scroll jump); Medications/Events become counted collapsibles on the case screen. Display layer only — data model, storage key, exports unchanged. v8: local-date fix, backups, room, planned discharge, checklists, week view, rx reminder, order tracking, PWA shell. v8.0: local-date fix (was UTC), discharged-days pollution fix, manual+auto JSON backup (photos excluded), room number (never exported), planned-discharge auto-fire on open, discharge checklist, post-discharge pending panel. v8.1: week view (+followup event type), weekday rx reminder (casebook:settings), two-stage order tracking (src/promoted), PWA shell (manifest/sw/icons; app itself stays a single HTML; SW is network-first for navigate — kill switch in HANDOFF §20). Storage key casebook:v2 unchanged, fields additive only. v7: gamified input nudges (casebook:stats). Implemented directly by Claude (Fable 5), no Codex. -->
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
@@ -42,6 +42,12 @@
     --done-soft:#e6efe6;
     --info:#38618c;
     --info-soft:#e6eff9;
+    --sev-un-bg:#fbf0f0;
+    --sev-un-line:#eccfcf;
+    --sev-wa-bg:#faf4e6;
+    --sev-wa-line:#e8d8b4;
+    --sev-st-bg:#eef4ee;
+    --sev-st-line:#cfdccf;
   }
   /* ダークはグレースケール基調（面・線・文字は無彩色、強調色のみ色を残す） */
   :root[data-theme="dark"]{
@@ -70,6 +76,12 @@
     --done-soft:#233026;
     --info:#8db4dd;
     --info-soft:#202934;
+    --sev-un-bg:#2a2020;
+    --sev-un-line:#4a3737;
+    --sev-wa-bg:#2a2620;
+    --sev-wa-line:#4a4530;
+    --sev-st-bg:#202a22;
+    --sev-st-line:#35483a;
   }
   *{box-sizing:border-box;margin:0;padding:0}
   html{-webkit-text-size-adjust:100%}
@@ -182,14 +194,42 @@
 .dots{letter-spacing:2px;color:var(--ink-soft);font-size:11px}
 
   .case-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+  /* v9: 重症度＝カードの淡い地色（Keep 型）。左端色帯は廃止 */
   .case-row{
-    background:var(--card);border:1px solid var(--line);border-radius:var(--r-m);
-    border-left:4px solid var(--line);
+    background:var(--card);border:1px solid var(--line);border-radius:14px;
     padding:10px 12px;cursor:pointer;
   }
-  .case-row.sev-unstable{border-left-color:var(--danger)}
-  .case-row.sev-watcher{border-left-color:var(--warn)}
-  .case-row.sev-stable{border-left-color:var(--done)}
+  .case-row.sev-unstable{background:var(--sev-un-bg);border-color:var(--sev-un-line)}
+  .case-row.sev-watcher{background:var(--sev-wa-bg);border-color:var(--sev-wa-line)}
+  .case-row.sev-stable{background:var(--sev-st-bg);border-color:var(--sev-st-line)}
+  .ksev{
+    font-size:10px;font-weight:800;border-radius:999px;padding:2px 8px;
+    color:var(--on-accent);vertical-align:2px;display:inline-block;
+  }
+  .ksev.severity-stable{background:var(--done)}
+  .ksev.severity-watcher{background:var(--warn)}
+  .ksev.severity-unstable{background:var(--danger)}
+  .card-todos{margin-top:6px;display:flex;flex-direction:column}
+  .card-todo{display:flex;align-items:center;gap:8px;padding:5px 4px;border-radius:8px;min-height:30px}
+  @media(hover:hover){ .card-todo:hover{background:rgba(31,111,95,.08)} }
+  .card-box{
+    width:18px;height:18px;border-radius:5px;border:2px solid var(--ink-faint);
+    flex-shrink:0;
+  }
+  .card-box.wait{border-color:var(--warn)}
+  .card-todo-text{font-size:13px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .card-wait-tag{
+    font-size:9.5px;font-weight:800;color:var(--warn);border:1px solid var(--warn);
+    border-radius:999px;padding:0 6px;flex-shrink:0;
+  }
+  .card-more{font-size:11px;color:var(--ink-faint);padding:2px 4px 0}
+  .card-clear{font-size:12px;color:var(--done);font-weight:700;margin-top:6px}
+  .card-quick{margin-top:8px;display:flex}
+  .card-quick input{
+    width:100%;border:none;background:transparent;border-bottom:1px dashed var(--line);
+    font:inherit;font-size:12.5px;padding:4px 2px;color:var(--ink);
+  }
+  .card-quick input:focus{outline:none;border-bottom-color:var(--accent)}
   .case-row-top{display:flex;justify-content:space-between;gap:10px;align-items:baseline}
   .case-label{font-size:16px;font-weight:700}
   .case-day{font-size:12px;color:var(--ink-faint);white-space:nowrap}
@@ -207,6 +247,7 @@
   .flag.wait{background:var(--warn-soft);color:var(--warn)}
   .flag.clear{background:var(--done-soft);color:var(--done)}
   .flag.trash{background:var(--danger-soft);color:var(--danger)}
+  .flag.ev{background:var(--info-soft);color:var(--info)}
   .flag.severity-stable{background:var(--done-soft);color:var(--done)}
   .flag.severity-watcher{background:var(--warn-soft);color:var(--warn)}
   .flag.severity-unstable{background:var(--danger-soft);color:var(--danger)}
@@ -1028,7 +1069,7 @@ if(typeof module !== "undefined"){ module.exports = LOGIC; }
 </script>
 
 <script>
-const APP_VERSION = "v8.2";  // 一覧下部に表示。実機がどの版を配信されているかの確認用
+const APP_VERSION = "v9.0";  // 一覧下部に表示。実機がどの版を配信されているかの確認用
 const KEY = "casebook:v2";
 const PHOTO_DB = "casebook-photos";
 const PHOTO_STORE = "photos";
@@ -1429,7 +1470,7 @@ function renderSaveOnly(){
 
 function go(name, caseId = null, extra = {}){
   const nextId = caseId ?? VIEW.caseId;
-  if(name !== "case" || nextId !== VIEW.caseId){ VIEW.caseEdit = false; }
+  if(name !== "case" || nextId !== VIEW.caseId){ VIEW.caseEdit = false; VIEW.open = {}; }
   VIEW = Object.assign({}, VIEW, extra, { name, caseId:nextId });
   window.scrollTo(0, 0);
   render();
@@ -2130,8 +2171,8 @@ function renderListV21(){
       <button class="chip ${VIEW.filter === "discharged" ? "on" : ""}" onclick="setFilter('discharged')">退院</button>
       <button class="chip ${VIEW.filter === "all" ? "on" : ""}" onclick="setFilter('all')">すべて</button>
     </div>
-    <div class="list-note">入院中 ${active.length}件 ／ To Do 残 ${totalTodos} ／ Waiting ${totalWaits}</div>
-    ${totalAll ? `<div class="progress-row"><div class="progress"><i style="width:${Math.round(totalDone / totalAll * 100)}%"></i></div><span class="panel-sub mono">To Do ${totalDone}/${totalAll}</span></div>` : ""}
+    <div class="list-note" data-list-note>入院中 ${active.length}件 ／ To Do 残 ${totalTodos} ／ Waiting ${totalWaits}</div>
+    ${totalAll ? `<div class="progress-row"><div class="progress" data-list-progress><i style="width:${Math.round(totalDone / totalAll * 100)}%"></i></div><span class="panel-sub mono" data-list-progress-label>To Do ${totalDone}/${totalAll}</span></div>` : ""}
     ${items.length ? `<div class="case-grid">${items.map(renderCaseCardV21).join("")}</div>` : `<div class="empty">表示できる症例がありません。</div>`}
     <div class="list-foot">
       <button class="linklike" onclick="go('trash')">Trash（<span data-count="trash">0</span>）</button>
@@ -2170,29 +2211,119 @@ function renderListV21(){
   `;
 }
 
+// v9: カードに載せる未完了項目（To Do → Waiting の順）
+function cardOpenItems(caseObj){
+  const day = currentDay(caseObj);
+  const items = [];
+  day.todos.forEach((t) => { if(!t.done){ items.push({ kind:"todo", field:"done", item:t, date:day.date }); } });
+  day.waits.forEach((w) => { if(!w.resolved){ items.push({ kind:"wait", field:"resolved", item:w, date:day.date }); } });
+  return items;
+}
+
+// 今日以降で最も近いイベント1件をチップに
+function nextEventChip(caseObj){
+  const today = todayISO();
+  const upcoming = caseObj.events
+    .filter((e) => e.date && e.date >= today)
+    .sort((a, b) => a.date.localeCompare(b.date))[0];
+  if(!upcoming){ return ""; }
+  return `<span class="flag ev">📅 ${esc(upcoming.date.slice(5).replace("-","/"))} ${esc(LOGIC.EVENT_TYPE_LABELS[upcoming.type])} ${esc(upcoming.title)}</span>`;
+}
+
 function renderCaseCardV21(caseObj){
   const stats = caseStats(caseObj);
   const sev = caseObj.severity;
-  const noOpen = !stats.todoOpen && !stats.waitOpen;
+  const isActive = caseObj.status === "active";
+  const open = cardOpenItems(caseObj);
+  const shown = open.slice(0, 3);
+  const restCount = open.length - shown.length;
+  const flags = [
+    !isActive ? `<span class="flag">退院</span>` : "",
+    isActive && caseObj.plannedDischargeAt ? `<span class="flag">退院予定 ${esc(caseObj.plannedDischargeAt.slice(5).replace("-","/"))}</span>` : "",
+    dischargeExportPending(caseObj) ? `<span class="flag wait">書き出し未</span>` : "",
+    !isActive && open.length ? `<span class="flag wait">残 ${open.length}</span>` : "",
+    nextEventChip(caseObj)
+  ].filter(Boolean).join("");
   return `
-    <article class="case-row sev-${sev || "none"}" onclick="go('case','${caseObj.id}')">
+    <article class="case-row sev-${sev || "none"}" data-case-card="${caseObj.id}" onclick="go('case','${caseObj.id}')">
       <div class="case-row-top">
-        <div class="case-label">${caseObj.status === "active" && !touchedToday(caseObj.id) ? `<span class="dot-untouched" title="今日未更新"></span>` : ""}${esc(LOGIC.formatLabel(caseObj) || "未設定")}</div>
+        <div class="case-label">${isActive && !touchedToday(caseObj.id) ? `<span class="dot-untouched" title="今日未更新"></span>` : ""}${sev ? `<span class="ksev severity-${sev}">${esc(LOGIC.severityLabel(sev))}</span> ` : ""}${esc(LOGIC.formatLabel(caseObj) || "未設定")}</div>
         <div class="case-day mono">${caseObj.room ? "Rm " + esc(caseObj.room) + " ・ " : ""}病日 ${stats.dayNumber}</div>
       </div>
       ${caseObj.patientSummary ? `<div class="case-sum">${esc(caseObj.patientSummary)}</div>` : ""}
-      <div class="case-flags">
-        ${sev ? `<span class="flag severity-${sev}">${esc(LOGIC.severityLabel(sev))}</span>` : ""}
-        ${caseObj.status !== "active" ? `<span class="flag">退院</span>` : ""}
-        ${caseObj.status === "active" && caseObj.plannedDischargeAt ? `<span class="flag">退院予定 ${esc(caseObj.plannedDischargeAt.slice(5).replace("-","/"))}</span>` : ""}
-        ${dischargeExportPending(caseObj) ? `<span class="flag wait">書き出し未</span>` : ""}
-        ${caseObj.status === "active" && stats.todoOpen ? `<span class="flag todo">To Do ${stats.todoOpen}</span>` : ""}
-        ${caseObj.status === "active" && stats.waitOpen ? `<span class="flag wait">Waiting ${stats.waitOpen}</span>` : ""}
-        ${caseObj.status !== "active" && (stats.todoOpen + stats.waitOpen) ? `<span class="flag wait">残 ${stats.todoOpen + stats.waitOpen}</span>` : ""}
-        ${noOpen && caseObj.status === "active" ? `<span class="flag clear">未処理なし</span>` : ""}
-      </div>
+      ${shown.length ? `<div class="card-todos">
+        ${shown.map((x) => `
+          <div class="card-todo" role="button" aria-label="完了にする" onclick="event.stopPropagation();cardCheck('${caseObj.id}','${x.date}','${x.kind}','${x.item.id}','${x.field}')">
+            <span class="card-box ${x.kind === "wait" ? "wait" : ""}"></span>
+            <span class="card-todo-text">${esc(x.item.text)}</span>
+            ${x.kind === "wait" ? `<span class="card-wait-tag">Waiting</span>` : ""}
+          </div>
+        `).join("")}
+      </div>` : (isActive ? `<div class="card-clear">✓ 未処理なし</div>` : "")}
+      ${restCount > 0 ? `<div class="card-more">ほか ${restCount} 件…</div>` : ""}
+      ${flags ? `<div class="case-flags">${flags}</div>` : ""}
+      ${isActive ? `<div class="card-quick" onclick="event.stopPropagation()">
+        <input id="quickAdd-${caseObj.id}" placeholder="＋ 今日やるを追加…" enterkeyhint="done" onkeydown="if(event.key==='Enter'){quickAddTodo('${caseObj.id}',this)}">
+      </div>` : ""}
     </article>
   `;
+}
+
+// v9: カード単位の部分再描画（全画面 render はスクロール位置が飛ぶため使わない）
+function refreshListSummary(){
+  const active = activeCases();
+  const totalTodos = active.reduce((sum, c) => sum + caseStats(c).todoOpen, 0);
+  const totalWaits = active.reduce((sum, c) => sum + caseStats(c).waitOpen, 0);
+  const totalDone = active.reduce((sum, c) => sum + currentDay(c).todos.filter((t) => t.done).length, 0);
+  const totalAll = totalDone + totalTodos;
+  const note = document.querySelector("[data-list-note]");
+  if(note){ note.textContent = `入院中 ${active.length}件 ／ To Do 残 ${totalTodos} ／ Waiting ${totalWaits}`; }
+  const bar = document.querySelector("[data-list-progress] i");
+  if(bar && totalAll){ bar.style.width = Math.round(totalDone / totalAll * 100) + "%"; }
+  const barLabel = document.querySelector("[data-list-progress-label]");
+  if(barLabel){ barLabel.textContent = `To Do ${totalDone}/${totalAll}`; }
+}
+
+function rerenderCard(caseId){
+  const caseObj = findCase(caseId);
+  const el = document.querySelector(`[data-case-card="${caseId}"]`);
+  if(!el || !el.outerHTML || !caseObj){ render(); return; }
+  el.outerHTML = renderCaseCardV21(caseObj);
+  refreshListSummary();
+  renderSaveOnly();
+}
+
+function cardCheck(caseId, date, kind, itemId, field){
+  const caseObj = findCase(caseId);
+  const day = caseObj ? LOGIC.getDay(caseObj, date) : null;
+  if(!day){ return; }
+  const list = kind === "todo" ? day.todos : day.waits;
+  const item = list.find((x) => x.id === itemId);
+  if(!item){ return; }
+  item[field] = true;
+  // Order の2段階はカード上のチェックでも作動させる
+  if(kind === "todo" && item.src === "order" && !item.promoted){
+    item.promoted = true;
+    day.waits.push({ id:LOGIC.makeId(), text:LOGIC.orderWaitText(item.text), resolved:false, src:"order" });
+    toast("Waiting に「" + LOGIC.orderWaitText(item.text) + "」を追加しました");
+  }
+  markCaseTouched(caseId);
+  queueSaveInner();
+  rerenderCard(caseId);
+}
+
+function quickAddTodo(caseId, input){
+  const text = (input.value || "").trim();
+  if(!text){ return; }
+  const caseObj = findCase(caseId);
+  if(!caseObj){ return; }
+  const day = LOGIC.ensureTodayDay(caseObj, todayISO());
+  day.todos.push({ id:LOGIC.makeId(), text, done:false });
+  markCaseTouched(caseId);
+  queueSaveInner();
+  rerenderCard(caseId);
+  const next = document.getElementById("quickAdd-" + caseId);
+  if(next && next.focus){ next.focus(); }
 }
 
 function renderCaseV21(){
@@ -2307,7 +2438,10 @@ function renderPendingAfterDischarge(caseObj, day){
 }
 
 function renderTodayTabV21(caseObj, day){
-  const admitExpanded = caseObj.admittedAt === todayISO();
+  const admitExpanded = sectionOpen("admissionBody", caseObj.admittedAt === todayISO());
+  const medsOpen = sectionOpen("medsBody", false);
+  const eventsOpen = sectionOpen("eventsBody", false);
+  const summaryOpen = sectionOpen("summaryBody", false);
   const discharged = caseObj.status !== "active";
   const todoDone = day.todos.filter((t) => t.done).length;
   const todoAll = day.todos.length;
@@ -2398,9 +2532,15 @@ function renderTodayTabV21(caseObj, day){
           </div>
         </section>
 
-        <section class="panel">
-          <div class="panel-head"><h2>Medications</h2><div class="panel-sub">薬剤・内服 / 注射</div></div>
-          <div class="panel-body">
+        <section class="collapse">
+          <div class="collapse-head">
+            <div>
+              <h2>Medications（${caseObj.meds.length}）</h2>
+              <div class="panel-sub">薬剤・内服 / 注射</div>
+            </div>
+            <button class="compact-btn" onclick="toggleSection(this,'medsBody')">${medsOpen ? "閉じる" : "開く"}</button>
+          </div>
+          <div class="collapse-body ${medsOpen ? "" : "hide"}" id="medsBody">
             <div class="modal-grid">
               <input id="medName" class="input" placeholder="薬剤名" enterkeyhint="done" onkeydown="if(event.key==='Enter'){createMed()}">
               <select id="medRoute" class="select"><option value="oral">内服</option><option value="inj">注射</option></select>
@@ -2415,9 +2555,15 @@ function renderTodayTabV21(caseObj, day){
           </div>
         </section>
 
-        <section class="panel">
-          <div class="panel-head"><h2>Events</h2><div class="panel-sub">検査 / 手術 / 処置 / 治療 / その他（未来の予定も可）</div></div>
-          <div class="panel-body">
+        <section class="collapse">
+          <div class="collapse-head">
+            <div>
+              <h2>Events（${caseObj.events.length}）</h2>
+              <div class="panel-sub">検査 / 手術 / 処置 / 治療 / 外来F/U（未来の予定も可）</div>
+            </div>
+            <button class="compact-btn" onclick="toggleSection(this,'eventsBody')">${eventsOpen ? "閉じる" : "開く"}</button>
+          </div>
+          <div class="collapse-body ${eventsOpen ? "" : "hide"}" id="eventsBody">
             <div class="modal-grid">
               <input id="evDate" class="input" type="date" value="${todayISO()}">
               <select id="evType" class="select">
@@ -2442,9 +2588,9 @@ function renderTodayTabV21(caseObj, day){
               <h2>Discharge Summary</h2>
               <div class="panel-sub">退院サマリ・退院書き出しに反映</div>
             </div>
-            <button class="compact-btn" onclick="toggleSection(this,'summaryBody')">開く</button>
+            <button class="compact-btn" onclick="toggleSection(this,'summaryBody')">${summaryOpen ? "閉じる" : "開く"}</button>
           </div>
-          <div class="collapse-body hide" id="summaryBody">
+          <div class="collapse-body ${summaryOpen ? "" : "hide"}" id="summaryBody">
             <div class="panel-sub">Discharge Checklist（退院前の確認・カルテに済ませたか）</div>
             <div class="routine-grid" style="margin-top:8px;margin-bottom:12px">
               ${DC_ROUTINE.map((item) => `
@@ -2747,11 +2893,18 @@ async function hydrateCaseAsync(){
   if(grid){ grid.innerHTML = renderPhotoGrid(caseObj); }
 }
 
+// 折りたたみの開閉は VIEW にも記録する（追加操作の再描画で勝手に閉じない）
+function sectionOpen(id, fallback){
+  return VIEW.open && (id in VIEW.open) ? !!VIEW.open[id] : !!fallback;
+}
+
 function toggleSection(button, id){
   const el = document.getElementById(id);
   if(!el){ return; }
   el.classList.toggle("hide");
-  button.textContent = el.classList.contains("hide") ? "開く" : "閉じる";
+  const opened = !el.classList.contains("hide");
+  VIEW.open = Object.assign({}, VIEW.open, { [id]: opened });
+  button.textContent = opened ? "閉じる" : "開く";
 }
 
 async function boot(){
