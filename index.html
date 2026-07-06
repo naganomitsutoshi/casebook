@@ -678,6 +678,11 @@ function logicFactory(){
     return c;
   }
 
+  // 検査オーダーの2段階目（done → Waiting へ自動生成）のテキスト
+  function orderWaitText(text){
+    return "結果確認: " + text;
+  }
+
   // 定期処方の曜日リマインド: 当日が設定曜日なら「定期処方の確認」To Do を1回だけ注入。
   // rxInjected でユーザー削除後の再注入を防ぎ、繰越で既に居る場合は重複させない
   function injectRxTodo(caseObj, today, weekdays){
@@ -996,6 +1001,7 @@ function logicFactory(){
     ensureTodayDay:ensureTodayDay,
     rolloverCase:rolloverCase,
     injectRxTodo:injectRxTodo,
+    orderWaitText:orderWaitText,
     applyPlannedDischarge:applyPlannedDischarge,
     purgeTrash:purgeTrash,
     formatLabel:formatLabel,
@@ -1577,6 +1583,16 @@ function doDeleteProblem(caseId, problemId){
   persist();
 }
 
+// Order モード: To Do 追加行のチップ。ON で追加した項目は「出した検査」となり、
+// done にした瞬間に Waiting へ「結果確認: …」が1回だけ自動生成される。
+// チップは classList 直接切替（再描画すると入力中テキストが消えるため）
+let ORDER_MODE = false;
+
+function toggleOrderMode(button){
+  ORDER_MODE = !ORDER_MODE;
+  button.classList.toggle("on", ORDER_MODE);
+}
+
 function addTextItem(caseId, kind, date = todayISO()){
   const inputId = `${kind}Input-${date}`;
   const input = document.getElementById(inputId);
@@ -1584,7 +1600,12 @@ function addTextItem(caseId, kind, date = todayISO()){
   if(!text){ return; }
   const caseObj = findCase(caseId);
   const day = LOGIC.getDay(caseObj, date) || LOGIC.ensureTodayDay(caseObj, date);
-  if(kind === "todo"){ day.todos.push({ id:LOGIC.makeId(), text, done:false }); }
+  if(kind === "todo"){
+    const item = { id:LOGIC.makeId(), text, done:false };
+    if(ORDER_MODE){ item.src = "order"; item.promoted = false; }
+    day.todos.push(item);
+    ORDER_MODE = false;
+  }
   if(kind === "wait"){ day.waits.push({ id:LOGIC.makeId(), text, resolved:false }); }
   if(kind === "hook"){ day.hooks.push({ id:LOGIC.makeId(), text }); }
   input.value = "";
@@ -1599,6 +1620,12 @@ function updateTextItem(caseId, date, kind, itemId, field, value){
   const list = kind === "todo" ? day.todos : kind === "wait" ? day.waits : day.hooks;
   const item = list.find((x) => x.id === itemId);
   item[field] = value;
+  // Order 付き To Do を done → Waiting に結果確認を1回だけ自動生成（un-done でも取り消さない）
+  if(kind === "todo" && field === "done" && value === true && item.src === "order" && !item.promoted){
+    item.promoted = true;
+    day.waits.push({ id:LOGIC.makeId(), text:LOGIC.orderWaitText(item.text), resolved:false, src:"order" });
+    toast("Waiting に「" + LOGIC.orderWaitText(item.text) + "」を追加しました");
+  }
   if(field === "done" || field === "resolved"){ persist(); } else { queueSave(); }
 }
 
@@ -2458,6 +2485,8 @@ function renderTodoLike(caseObj, day, kind){
     hook:{ key:"hooks", input:"引っかかりを追加", done:null }
   }[kind];
   const items = day[config.key];
+  const showOrderChip = kind === "todo" && day.date === todayISO() && caseObj.status === "active";
+  const srcTag = (item) => item.src === "order" ? `<span class="flag todo" style="flex-shrink:0">Ord</span>` : item.src === "rx" ? `<span class="flag" style="flex-shrink:0">定期</span>` : "";
   return `
     <div class="list">
       ${items.length ? items.map((item) => `
@@ -2466,12 +2495,14 @@ function renderTodoLike(caseObj, day, kind){
             ? `<button class="row-check ${item[config.done] ? (kind === "wait" ? "wait" : "done") : ""}" onclick="updateTextItem('${caseObj.id}','${day.date}','${kind}','${item.id}','${config.done}',${item[config.done] ? "false" : "true"})" aria-label="完了切替"><span>${item[config.done] ? "✓" : ""}</span></button>`
             : `<span class="row-dot"></span>`}
           <input class="row-input ${config.done && item[config.done] ? "muted" : ""}" value="${esc(item.text)}" oninput="updateTextItem('${caseObj.id}','${day.date}','${kind}','${item.id}','text',this.value)">
+          ${config.done ? srcTag(item) : ""}
           <button class="row-del" onclick="deleteTextItem('${caseObj.id}','${day.date}','${kind}','${item.id}')" aria-label="削除">×</button>
         </div>
       `).join("") : `<div class="empty">まだありません。</div>`}
     </div>
     <div class="add-row" style="margin-top:8px">
       <input id="${kind}Input-${day.date}" class="input" placeholder="${config.input}" enterkeyhint="next" onkeydown="if(event.key==='Enter'){addTextItem('${caseObj.id}','${kind}','${day.date}')}">
+      ${showOrderChip ? `<button class="chip ${ORDER_MODE ? "on" : ""}" onclick="toggleOrderMode(this)" title="出した検査として追加。done で Waiting に結果確認を自動追加">Order</button>` : ""}
       <button class="btn btn-ghost" onclick="addTextItem('${caseObj.id}','${kind}','${day.date}')">追加</button>
     </div>
   `;

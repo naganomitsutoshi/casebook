@@ -197,6 +197,22 @@ vm.runInContext(mainSrc, sandbox);
   const rxTodoAdded = vm.runInContext("c.days.some(d => d.todos.some(t => t.src === 'rx'))", sandbox);
   if (!rxTodoAdded) { console.error("NG: 当日曜日をONにしても rx To Do が注入されない"); process.exit(1); }
 
+  // v8.1: Order 2段階（チップ表示・done→Waiting 自動生成・1回限り）
+  const todayTabOrder = vm.runInContext("VIEW={name:'case',caseId:c.id,tab:'today',filter:'active'}; renderCaseV21()", sandbox);
+  if (!todayTabOrder.includes("toggleOrderMode")) { console.error("NG: To Do 追加行に Order チップが無い"); process.exit(1); }
+  vm.runInContext(`
+    var od = LOGIC.getDay(c, "${today}") || LOGIC.ensureTodayDay(c, "${today}");
+    od.todos.push({ id:"ord1", text:"血培", done:false, src:"order", promoted:false });
+    updateTextItem(c.id, "${today}", "todo", "ord1", "done", true);
+  `, sandbox);
+  if (!vm.runInContext(`LOGIC.getDay(c, "${today}").waits.some(w => w.text === "結果確認: 血培")`, sandbox)) {
+    console.error("NG: Order done で Waiting に結果確認が生成されない"); process.exit(1);
+  }
+  vm.runInContext(`updateTextItem(c.id, "${today}", "todo", "ord1", "done", false); updateTextItem(c.id, "${today}", "todo", "ord1", "done", true)`, sandbox);
+  if (vm.runInContext(`LOGIC.getDay(c, "${today}").waits.filter(w => w.text === "結果確認: 血培").length`, sandbox) !== 1) {
+    console.error("NG: Order の Waiting 自動生成が1回限りでない"); process.exit(1);
+  }
+
   // v8.1: Week ビュー（当日イベントが載る・下部ナビに Week がある）
   const weekHtml = vm.runInContext("VIEW={name:'week',caseId:null,tab:'today',filter:'active'}; renderWeekView()", sandbox);
   if (!weekHtml.includes("Week") || !weekHtml.includes("今日") || !weekHtml.includes("嚥下評価")) {
