@@ -72,7 +72,7 @@ vm.runInContext(mainSrc, sandbox);
   `, sandbox);
 
   const checks = [
-    ["renderListV21()", ["入院中", "case-row", "Trash", "theme-seg", "Export 連続", "累計", "dot-untouched", "progress-row", "バックアップ", "復元", "handleRestoreInput", "v9."]],
+    ["renderListV21()", ["入院中", "case-row", "Trash", "theme-seg", "Export 連続", "累計", "dot-untouched", "progress-row", "バックアップ", "復元", "handleRestoreInput", "v10.", "Sync：", "showSyncModal", "未設定（ローカルのみ）"]],
     ["renderCaseV21()", ["Problem List", "To Do", "Waiting", "Contingency Plan", "Hooks", "tabs-bar", "症例ラベル", "入院日", "updateCaseLabel", "today-progress", "Rm 402", "部屋番号", "Discharge Checklist", "toggleDcChecklist"]],
     ["(VIEW.tab='log', renderCaseV21())", ["Log", "todoInput-" + today]],
     ["(VIEW.tab='timeline', renderCaseV21())", ["Timeline", "band-inj", "tl-legend", "開始"]],
@@ -296,6 +296,22 @@ vm.runInContext(mainSrc, sandbox);
     if (DOM_BUILTINS.has(name)) {
       console.error("NG: インラインハンドラの関数名「" + name + "」が DOM 内蔵APIと衝突（自作関数が呼ばれず無反応になる）"); process.exit(1);
     }
+  }
+
+  // Phase 2: Sync 設定モーダルが描画され、必要な入力欄・警告文が揃っているか（未設定状態）
+  vm.runInContext("showSyncModal()", sandbox);
+  const syncModal = els["modalMount"] ? els["modalMount"].innerHTML : "";
+  for (const n of ['id="syncCfg"', 'id="syncEmail"', 'id="syncPass"', 'id="syncPhrase1"', 'id="syncPhrase2"',
+    "doEnableSync", "パスフレーズを忘れると", "暗号化してから送信"]) {
+    if (!syncModal.includes(n)) { console.error("NG: Sync設定モーダルに「" + n + "」が無い"); process.exit(1); }
+  }
+  // 設定貼り付けのパース（JSON でなくコンソールの JS 断片でも読めること・eval 不使用）
+  const cfg = vm.runInContext(`parseFirebaseConfig('const firebaseConfig = { apiKey: "AIzaX", authDomain: "p.firebaseapp.com", projectId: "p", storageBucket: "p.appspot.com", messagingSenderId: "123", appId: "1:123:web:abc" };')`, sandbox);
+  if (!cfg || cfg.apiKey !== "AIzaX" || cfg.projectId !== "p" || cfg.appId !== "1:123:web:abc") {
+    console.error("NG: parseFirebaseConfig がコンソール貼り付けを読めない"); process.exit(1);
+  }
+  if (vm.runInContext(`parseFirebaseConfig('apiKey: "x" だけ')`, sandbox) !== null) {
+    console.error("NG: parseFirebaseConfig が不完全な設定を弾かない"); process.exit(1);
   }
 
   // render() 本体もDOMスタブ上で例外なく通るか

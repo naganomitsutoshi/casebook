@@ -1,5 +1,5 @@
 ﻿<!DOCTYPE html>
-<!-- Casebook v9: local-only inpatient tracker. v9 "cards that clear without opening": list cards show open task texts (max 3) with on-card check-off (Waiting = amber box), severity as card tint, next-event/discharge chips, quick-add line per card, card-level partial re-render (no scroll jump); Medications/Events become counted collapsibles on the case screen. Display layer only — data model, storage key, exports unchanged. v8: local-date fix, backups, room, planned discharge, checklists, week view, rx reminder, order tracking, PWA shell. v8.0: local-date fix (was UTC), discharged-days pollution fix, manual+auto JSON backup (photos excluded), room number (never exported), planned-discharge auto-fire on open, discharge checklist, post-discharge pending panel. v8.1: week view (+followup event type), weekday rx reminder (casebook:settings), two-stage order tracking (src/promoted), PWA shell (manifest/sw/icons; app itself stays a single HTML; SW is network-first for navigate — kill switch in HANDOFF §20). Storage key casebook:v2 unchanged, fields additive only. v7: gamified input nudges (casebook:stats). Implemented directly by Claude (Fable 5), no Codex. -->
+<!-- Casebook v10: inpatient tracker, local-first with optional E2E-encrypted 2-device sync (Phase 2 / SPEC-phase2): Firebase Auth + Firestore hold AES-GCM ciphertext only (PBKDF2 key from a user passphrase; photos and per-device prefs never sync; zero external traffic unless sync is enabled — the Firebase SDK is dynamically imported only then). Field-level last-write-wins merge with tombstones for hard deletes; sync state in localStorage casebook:sync (excluded from JSON backups). v9: local-only inpatient tracker. v9 "cards that clear without opening": list cards show open task texts (max 3) with on-card check-off (Waiting = amber box), severity as card tint, next-event/discharge chips, quick-add line per card, card-level partial re-render (no scroll jump); Medications/Events become counted collapsibles on the case screen. Display layer only — data model, storage key, exports unchanged. v8: local-date fix, backups, room, planned discharge, checklists, week view, rx reminder, order tracking, PWA shell. v8.0: local-date fix (was UTC), discharged-days pollution fix, manual+auto JSON backup (photos excluded), room number (never exported), planned-discharge auto-fire on open, discharge checklist, post-discharge pending panel. v8.1: week view (+followup event type), weekday rx reminder (casebook:settings), two-stage order tracking (src/promoted), PWA shell (manifest/sw/icons; app itself stays a single HTML; SW is network-first for navigate — kill switch in HANDOFF §20). Storage key casebook:v2 unchanged, fields additive only. v7: gamified input nudges (casebook:stats). Implemented directly by Claude (Fable 5), no Codex. -->
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
@@ -1029,6 +1029,196 @@ function logicFactory(){
     return out;
   }
 
+  // ===== Phase 2: E2E 暗号化同期の純ロジック（SPEC-phase2）=====
+  // DOM・保存層・Firebase に依存しない。転送層は呼び出し側が注入する。
+
+  // 症例オブジェクトのトップレベルフィールド差分（id は同一性キーなので除外）
+  function syncDiffFields(prevCase, currCase){
+    var keys = {};
+    Object.keys(prevCase || {}).forEach(function(k){ keys[k] = true; });
+    Object.keys(currCase || {}).forEach(function(k){ keys[k] = true; });
+    var changed = [];
+    Object.keys(keys).forEach(function(k){
+      if(k === "id"){ return; }
+      var a = prevCase ? JSON.stringify(prevCase[k] === undefined ? null : prevCase[k]) : "__none__";
+      var b = currCase ? JSON.stringify(currCase[k] === undefined ? null : currCase[k]) : "__none__";
+      if(a !== b){ changed.push(k); }
+    });
+    return changed;
+  }
+
+  // フィールド単位 LWW マージ。mt = { field: ISO時刻 }。新しい方を採用、同時刻はローカル優先
+  function syncMergeCase(localCase, localMt, remoteCase, remoteMt){
+    localMt = localMt || {};
+    remoteMt = remoteMt || {};
+    var merged = JSON.parse(JSON.stringify(localCase));
+    var mt = {};
+    var keys = {};
+    Object.keys(localCase).forEach(function(k){ keys[k] = true; });
+    Object.keys(remoteCase).forEach(function(k){ keys[k] = true; });
+    var tookRemote = false;
+    Object.keys(keys).forEach(function(k){
+      if(k === "id"){ return; }
+      var lt = localMt[k] || "";
+      var rt = remoteMt[k] || "";
+      if(rt > lt && (k in remoteCase)){
+        merged[k] = JSON.parse(JSON.stringify(remoteCase[k]));
+        mt[k] = rt;
+        if(JSON.stringify(localCase[k]) !== JSON.stringify(remoteCase[k])){ tookRemote = true; }
+      }else if(lt){
+        mt[k] = lt;
+      }
+    });
+    return { merged:merged, mt:mt, tookRemote:tookRemote };
+  }
+
+  // 保存時フック: 前回スナップショットと比較し、変わった症例の mt を刻印して dirty に積む。
+  // state = { snap:{id:json}, mt:{id:{field:iso}}, dirty:{id:true}, tombstones:{id:true} }
+  function syncEmptyState(){
+    return { snap:{}, mt:{}, dirty:{}, tombstones:{} };
+  }
+
+  function syncNoteLocalChanges(data, state, nowIso){
+    state = state || syncEmptyState();
+    var seen = {};
+    (data.cases || []).forEach(function(c){
+      seen[c.id] = true;
+      if(state.tombstones[c.id]){ return; } // 墓標済み id は同期対象外（復活防止）
+      var prevJson = state.snap[c.id];
+      var prev = prevJson ? JSON.parse(prevJson) : null;
+      var changed = syncDiffFields(prev, c);
+      if(changed.length){
+        state.mt[c.id] = state.mt[c.id] || {};
+        changed.forEach(function(k){ state.mt[c.id][k] = nowIso; });
+        state.snap[c.id] = JSON.stringify(c);
+        state.dirty[c.id] = true;
+      }
+    });
+    // スナップショットに居るのにローカルに居ない = 完全削除 → 墓標を push 対象に
+    Object.keys(state.snap).forEach(function(id){
+      if(!seen[id]){
+        delete state.snap[id];
+        delete state.mt[id];
+        state.tombstones[id] = true;
+        state.dirty[id] = true;
+      }
+    });
+    return state;
+  }
+
+  // 取り込み: リモート全件（復号済み）とローカルを照合し、マージ後データと push 計画を返す。
+  // remoteList = [{ id, deleted, case, mt }]
+  function syncReconcile(data, state, remoteList, nowIso){
+    state = syncNoteLocalChanges(data, state, nowIso);
+    var byId = {};
+    (data.cases || []).forEach(function(c){ byId[c.id] = c; });
+    var localChanged = false;
+    (remoteList || []).forEach(function(r){
+      if(r.deleted){
+        state.tombstones[r.id] = true;
+        delete state.dirty[r.id];
+        delete state.snap[r.id];
+        delete state.mt[r.id];
+        if(byId[r.id]){
+          data.cases = data.cases.filter(function(c){ return c.id !== r.id; });
+          delete byId[r.id];
+          localChanged = true;
+        }
+        return;
+      }
+      if(state.tombstones[r.id]){ return; } // こちらで完全削除済み → 取り込まない（墓標を push する）
+      var local = byId[r.id];
+      if(!local){
+        var incoming = JSON.parse(JSON.stringify(r.case));
+        incoming.id = r.id;
+        data.cases.push(incoming);
+        state.snap[r.id] = JSON.stringify(incoming);
+        state.mt[r.id] = JSON.parse(JSON.stringify(r.mt || {}));
+        delete state.dirty[r.id];
+        localChanged = true;
+        return;
+      }
+      var res = syncMergeCase(local, state.mt[r.id], r.case, r.mt);
+      res.merged.id = r.id;
+      var mergedJson = JSON.stringify(res.merged);
+      if(mergedJson !== JSON.stringify(local)){
+        var idx = data.cases.indexOf(local);
+        data.cases[idx] = res.merged;
+        byId[r.id] = res.merged;
+        localChanged = true;
+      }
+      state.mt[r.id] = res.mt;
+      // マージ結果がリモートと異なる（=ローカル側の値が生き残った）フィールドがあれば push 継続
+      if(syncDiffFields(r.case, res.merged).length > 0){ state.dirty[r.id] = true; }
+      else { delete state.dirty[r.id]; }
+      state.snap[r.id] = mergedJson;
+    });
+    var pushes = [];
+    Object.keys(state.dirty).forEach(function(id){
+      if(state.tombstones[id]){
+        pushes.push({ id:id, deleted:true, case:null, mt:null });
+      }else if(byId[id]){
+        pushes.push({ id:id, deleted:false, case:byId[id], mt:state.mt[id] || {} });
+      }
+    });
+    return { data:data, state:state, pushes:pushes, localChanged:localChanged };
+  }
+
+  function syncClearDirty(state, ids){
+    (ids || []).forEach(function(id){ delete state.dirty[id]; });
+    return state;
+  }
+
+  // ===== WebCrypto ヘルパ（globalThis.crypto。ブラウザ／Node 18+ 共通）=====
+  var subtle = (typeof globalThis !== "undefined" && globalThis.crypto) ? globalThis.crypto.subtle : null;
+
+  function b64FromBytes(bytes){
+    var bin = "";
+    var arr = new Uint8Array(bytes);
+    for(var i = 0; i < arr.length; i++){ bin += String.fromCharCode(arr[i]); }
+    return globalThis.btoa(bin);
+  }
+
+  function bytesFromB64(b64){
+    var bin = globalThis.atob(b64);
+    var arr = new Uint8Array(bin.length);
+    for(var i = 0; i < bin.length; i++){ arr[i] = bin.charCodeAt(i); }
+    return arr;
+  }
+
+  var PBKDF2_ITER = 310000;
+
+  function syncRandomSaltB64(){
+    var bytes = new Uint8Array(16);
+    globalThis.crypto.getRandomValues(bytes);
+    return b64FromBytes(bytes);
+  }
+
+  async function syncDeriveKey(passphrase, saltB64, iter){
+    var enc = new TextEncoder();
+    var baseKey = await subtle.importKey("raw", enc.encode(passphrase), "PBKDF2", false, ["deriveKey"]);
+    return subtle.deriveKey(
+      { name:"PBKDF2", salt:bytesFromB64(saltB64), iterations:iter || PBKDF2_ITER, hash:"SHA-256" },
+      baseKey,
+      { name:"AES-GCM", length:256 },
+      true,
+      ["encrypt", "decrypt"]
+    );
+  }
+
+  async function syncEncryptJson(key, obj){
+    var iv = new Uint8Array(12);
+    globalThis.crypto.getRandomValues(iv);
+    var enc = new TextEncoder();
+    var cipher = await subtle.encrypt({ name:"AES-GCM", iv:iv }, key, enc.encode(JSON.stringify(obj)));
+    return { iv:b64FromBytes(iv), blob:b64FromBytes(cipher) };
+  }
+
+  async function syncDecryptJson(key, blobB64, ivB64){
+    var plain = await subtle.decrypt({ name:"AES-GCM", iv:bytesFromB64(ivB64) }, key, bytesFromB64(blobB64));
+    return JSON.parse(new TextDecoder().decode(plain));
+  }
+
   return {
     SEVERITY_LABELS:SEVERITY_LABELS,
     MED_ROUTE_LABELS:MED_ROUTE_LABELS,
@@ -1061,7 +1251,18 @@ function logicFactory(){
     nextDateISO:nextDateISO,
     buildWeekItems:buildWeekItems,
     computeStreak:computeStreak,
-    pruneStatsDays:pruneStatsDays
+    pruneStatsDays:pruneStatsDays,
+    syncDiffFields:syncDiffFields,
+    syncMergeCase:syncMergeCase,
+    syncEmptyState:syncEmptyState,
+    syncNoteLocalChanges:syncNoteLocalChanges,
+    syncReconcile:syncReconcile,
+    syncClearDirty:syncClearDirty,
+    syncRandomSaltB64:syncRandomSaltB64,
+    syncDeriveKey:syncDeriveKey,
+    syncEncryptJson:syncEncryptJson,
+    syncDecryptJson:syncDecryptJson,
+    PBKDF2_ITER:PBKDF2_ITER
   };
 }
 var LOGIC = logicFactory();
@@ -1069,7 +1270,7 @@ if(typeof module !== "undefined"){ module.exports = LOGIC; }
 </script>
 
 <script>
-const APP_VERSION = "v9.1";  // 一覧下部に表示。実機がどの版を配信されているかの確認用
+const APP_VERSION = "v10.0";  // 一覧下部に表示。実機がどの版を配信されているかの確認用
 const KEY = "casebook:v2";
 const PHOTO_DB = "casebook-photos";
 const PHOTO_STORE = "photos";
@@ -1251,6 +1452,333 @@ const Backups = {
 let DB = Store.empty();
 let VIEW = { name:"list", caseId:null, tab:"today", filter:"active" };
 let SAVE_OK = true;
+
+// ===== Phase 2: E2E 暗号化同期（SPEC-phase2）=====
+// 未設定なら一切の外部通信をしない（Firebase SDK の動的読み込み自体が起きない）。
+// サーバに置くのは AES-GCM 暗号文のみ。写真（IndexedDB）は同期対象外。
+const SYNC_KEY = "casebook:sync";
+let SYNC = null; // { enabled, config:{apiKey..}, email, uid, salt, iter, keyJwk, state, lastSyncAt }
+try {
+  const rawSync = JSON.parse(localStorage.getItem(SYNC_KEY) || "null");
+  if(rawSync && typeof rawSync === "object" && rawSync.config && rawSync.keyJwk){
+    rawSync.state = rawSync.state && rawSync.state.snap ? rawSync.state : LOGIC.syncEmptyState();
+    SYNC = rawSync;
+  }
+} catch(e) {}
+
+const SYNC_RT = { fb:null, appInst:null, appCount:0, key:null };
+let SYNC_STATUS = { kind:(SYNC && SYNC.enabled) ? "idle" : "off", detail:"" };
+let SYNC_RUNNING = false;
+let SYNC_PENDING = false;
+
+function saveSync(){
+  try {
+    if(SYNC){ localStorage.setItem(SYNC_KEY, JSON.stringify(SYNC)); }
+    else { localStorage.removeItem(SYNC_KEY); }
+  } catch(e) {}
+}
+
+function syncStatusLabel(){
+  const at = SYNC && SYNC.lastSyncAt ? timeLabel(SYNC.lastSyncAt) : "";
+  switch(SYNC_STATUS.kind){
+    case "off": return "未設定（ローカルのみ）";
+    case "syncing": return "同期中…";
+    case "ok": return "同期済み " + at;
+    case "offline": return "オフライン（ローカル保存は正常）" + (at ? " ・前回 " + at : "");
+    case "reauth": return "再ログインが必要";
+    case "error": return "同期エラー" + (at ? " ・前回 " + at : "");
+    default: return at ? "前回 " + at : "待機中";
+  }
+}
+
+function setSyncStatus(kind, detail){
+  SYNC_STATUS = { kind, detail:detail || "" };
+  document.querySelectorAll("[data-sync-status]").forEach((el) => { el.textContent = syncStatusLabel(); });
+}
+
+async function syncSdk(){
+  if(SYNC_RT.fb){ return SYNC_RT.fb; }
+  const base = "https://www.gstatic.com/firebasejs/10.14.1/";
+  const [appMod, authMod, fsMod] = await Promise.all([
+    import(base + "firebase-app.js"),
+    import(base + "firebase-auth.js"),
+    import(base + "firebase-firestore.js")
+  ]);
+  SYNC_RT.fb = { app:appMod, auth:authMod, fs:fsMod };
+  return SYNC_RT.fb;
+}
+
+async function syncApp(config){
+  const fb = await syncSdk();
+  const cfg = config || SYNC.config;
+  if(!SYNC_RT.appInst || SYNC_RT.appCfg !== JSON.stringify(cfg)){
+    SYNC_RT.appCount += 1;
+    SYNC_RT.appInst = fb.app.initializeApp(cfg, "casebook-" + SYNC_RT.appCount);
+    SYNC_RT.appCfg = JSON.stringify(cfg);
+  }
+  return fb;
+}
+
+async function syncCurrentUser(fb){
+  const authInst = fb.auth.getAuth(SYNC_RT.appInst);
+  if(authInst.currentUser){ return authInst.currentUser; }
+  await new Promise((resolve) => {
+    const un = fb.auth.onAuthStateChanged(authInst, () => { un(); resolve(); });
+  });
+  return authInst.currentUser;
+}
+
+async function syncAesKey(){
+  if(SYNC_RT.key){ return SYNC_RT.key; }
+  SYNC_RT.key = await crypto.subtle.importKey("jwk", SYNC.keyJwk, { name:"AES-GCM" }, true, ["encrypt", "decrypt"]);
+  return SYNC_RT.key;
+}
+
+function syncRefs(fb, uid){
+  const db = fb.fs.getFirestore(SYNC_RT.appInst);
+  return {
+    casesCol: fb.fs.collection(db, "users", uid, "cases"),
+    caseDoc: (id) => fb.fs.doc(db, "users", uid, "cases", id),
+    cryptoDoc: fb.fs.doc(db, "users", uid, "meta", "crypto")
+  };
+}
+
+async function syncPullAll(fb, uid){
+  const refs = syncRefs(fb, uid);
+  const snap = await fb.fs.getDocs(refs.casesCol);
+  const key = await syncAesKey();
+  const out = [];
+  for(const d of snap.docs){
+    const v = d.data();
+    if(v.deleted){ out.push({ id:d.id, deleted:true, case:null, mt:null }); continue; }
+    const payload = await LOGIC.syncDecryptJson(key, v.blob, v.iv); // 復号失敗=鍵不一致は catch 側で error 表示
+    out.push({ id:d.id, deleted:false, case:payload.case, mt:payload.mt || {} });
+  }
+  return out;
+}
+
+async function syncPushAll(fb, uid, pushes){
+  const refs = syncRefs(fb, uid);
+  const key = await syncAesKey();
+  for(const p of pushes){
+    if(p.deleted){
+      await fb.fs.setDoc(refs.caseDoc(p.id), { v:1, deleted:true, updatedAt:fb.fs.serverTimestamp() });
+    }else{
+      const enc = await LOGIC.syncEncryptJson(key, { case:p.case, mt:p.mt });
+      await fb.fs.setDoc(refs.caseDoc(p.id), { v:1, deleted:false, iv:enc.iv, blob:enc.blob, updatedAt:fb.fs.serverTimestamp() });
+    }
+  }
+}
+
+async function syncNow(opts = {}){
+  if(!SYNC || !SYNC.enabled){ return; }
+  if(SYNC_RUNNING){ SYNC_PENDING = true; return; }
+  SYNC_RUNNING = true;
+  setSyncStatus("syncing");
+  try{
+    const fb = await syncApp();
+    const user = await syncCurrentUser(fb);
+    if(!user){
+      setSyncStatus("reauth");
+      if(opts.toast){ toast("再ログインが必要です（Sync 設定から）"); }
+      return;
+    }
+    const remote = await syncPullAll(fb, user.uid);
+    const res = LOGIC.syncReconcile(DB, SYNC.state, remote, new Date().toISOString());
+    DB = res.data;
+    if(res.localChanged){
+      DB = LOGIC.normalizeData(DB); // 別端末由来の症例も既存の形状保証を通す
+      SAVE_OK = await Store.save(DB);
+      render();
+    }
+    if(res.pushes.length){
+      await syncPushAll(fb, user.uid, res.pushes);
+      LOGIC.syncClearDirty(SYNC.state, res.pushes.map((p) => p.id));
+    }
+    SYNC.lastSyncAt = new Date().toISOString();
+    saveSync();
+    setSyncStatus("ok");
+    if(opts.toast){ toast("同期しました"); }
+  }catch(e){
+    saveSync(); // mt 刻印などの状態は失敗時も保持
+    const msg = String((e && e.message) || e);
+    const offline = (typeof navigator !== "undefined" && navigator.onLine === false) || (e && e.code === "unavailable") || /network|failed to fetch|dynamically imported/i.test(msg);
+    setSyncStatus(offline ? "offline" : "error", msg);
+    if(opts.toast){ toast(offline ? "オフラインです（ローカル保存は正常）" : "同期エラー: " + msg.slice(0, 80)); }
+  }finally{
+    SYNC_RUNNING = false;
+    if(SYNC_PENDING){ SYNC_PENDING = false; queueSync(); }
+  }
+}
+
+const queueSyncInner = debounce(function(){ syncNow(); }, 5000);
+function queueSync(){ if(SYNC && SYNC.enabled){ queueSyncInner(); } }
+
+// 保存成功のたびに呼ぶ: 変更フィールドへ現在時刻を刻印（オフライン中も正確な LWW 時刻を残す）
+function syncAfterSave(){
+  if(!SYNC || !SYNC.enabled){ return; }
+  LOGIC.syncNoteLocalChanges(DB, SYNC.state, new Date().toISOString());
+  saveSync();
+  queueSync();
+}
+
+// Firebase コンソールの貼り付けテキストから設定値を抜き出す（JSON でなくてもよい。eval はしない）
+function parseFirebaseConfig(text){
+  const keys = ["apiKey", "authDomain", "projectId", "storageBucket", "messagingSenderId", "appId"];
+  const cfg = {};
+  keys.forEach((k) => {
+    const m = text.match(new RegExp(k + '["\']?\\s*[:=]\\s*["\']([^"\']+)["\']'));
+    if(m){ cfg[k] = m[1]; }
+  });
+  if(!cfg.apiKey || !cfg.projectId || !cfg.appId){ return null; }
+  if(!cfg.authDomain){ cfg.authDomain = cfg.projectId + ".firebaseapp.com"; }
+  return cfg;
+}
+
+async function enableSync(cfg, email, password, passphrase){
+  const fb = await syncApp(cfg);
+  const authInst = fb.auth.getAuth(SYNC_RT.appInst);
+  let cred;
+  try{
+    cred = await fb.auth.signInWithEmailAndPassword(authInst, email, password);
+  }catch(e){
+    const code = e && e.code;
+    if(code === "auth/user-not-found" || code === "auth/invalid-credential" || code === "auth/invalid-login-credentials"){
+      cred = await fb.auth.createUserWithEmailAndPassword(authInst, email, password); // 既存ユーザーのパスワード誤りなら email-already-in-use で失敗し表面化する
+    }else{ throw e; }
+  }
+  const uid = cred.user.uid;
+  const refs = syncRefs(fb, uid);
+  const metaSnap = await fb.fs.getDoc(refs.cryptoDoc);
+  let salt, iter, key;
+  if(metaSnap.exists()){
+    const m = metaSnap.data();
+    salt = m.salt;
+    iter = m.iter || LOGIC.PBKDF2_ITER;
+    key = await LOGIC.syncDeriveKey(passphrase, salt, iter);
+    try{
+      await LOGIC.syncDecryptJson(key, m.check.blob, m.check.iv);
+    }catch(e){
+      throw new Error("パスフレーズが1台目の設定と一致しません");
+    }
+  }else{
+    salt = LOGIC.syncRandomSaltB64();
+    iter = LOGIC.PBKDF2_ITER;
+    key = await LOGIC.syncDeriveKey(passphrase, salt, iter);
+    const check = await LOGIC.syncEncryptJson(key, { check:"casebook" });
+    await fb.fs.setDoc(refs.cryptoDoc, { v:1, salt, iter, check });
+  }
+  SYNC_RT.key = key;
+  SYNC = {
+    enabled:true,
+    config:cfg,
+    email:email,
+    uid:uid,
+    salt:salt,
+    iter:iter,
+    keyJwk:await crypto.subtle.exportKey("jwk", key),
+    state:LOGIC.syncEmptyState(),
+    lastSyncAt:null
+  };
+  saveSync();
+  setSyncStatus("idle");
+  await syncNow({ toast:true });
+}
+
+function showSyncModal(){
+  if(SYNC && SYNC.enabled){
+    showModal(`
+      <h3>Sync（2端末同期）</h3>
+      <p class="sub">サーバには暗号化済みデータのみ保存（E2E暗号化）。写真は端末内のみで同期されません。</p>
+      <div class="list">
+        <div class="row-item"><span class="row-dot"></span><div class="row-input" style="cursor:default">アカウント: ${esc(SYNC.email || "")}</div></div>
+        <div class="row-item"><span class="row-dot"></span><div class="row-input" style="cursor:default">状態: <span data-sync-status>${esc(syncStatusLabel())}</span></div></div>
+      </div>
+      ${SYNC_STATUS.kind === "reauth" ? `
+        <label class="panel-sub">パスワード（再ログイン）</label>
+        <input id="syncReloginPass" class="input" type="password" autocomplete="current-password">
+        <div class="modal-actions">
+          <button class="btn" onclick="doSyncRelogin(this)">再ログイン</button>
+        </div>` : ""}
+      <div class="modal-actions">
+        <button class="btn btn-ghost" onclick="closeModal()">閉じる</button>
+        <button class="btn" onclick="syncNow({toast:true})">今すぐ同期</button>
+        <button class="btn btn-danger" onclick="confirmAction('同期を無効化','この端末の同期を止めます。端末内データとサーバ上のデータは消えません。','disableSync()','無効化')">無効化</button>
+      </div>
+    `);
+    return;
+  }
+  showModal(`
+    <h3>Sync を設定（2端末同期）</h3>
+    <p class="sub">Firebase の初期設定（手順書）を済ませてから、コンソールに表示される設定をそのまま貼り付けてください。症例データは端末内で暗号化してから送信され、パスフレーズを知らない相手（サーバ運営者含む）は読めません。</p>
+    <label class="panel-sub">Firebase 設定（コンソールの firebaseConfig を貼り付け）</label>
+    <textarea id="syncCfg" class="textarea mono" style="height:110px" placeholder='const firebaseConfig = { apiKey: "...", ... };'></textarea>
+    <label class="panel-sub">メールアドレス（同期アカウント）</label>
+    <input id="syncEmail" class="input" type="email" autocomplete="email">
+    <label class="panel-sub">パスワード（初回入力時に自動でアカウント作成）</label>
+    <input id="syncPass" class="input" type="password" autocomplete="new-password">
+    <label class="panel-sub">暗号化パスフレーズ（8文字以上・全端末で同一・紙に控える）</label>
+    <input id="syncPhrase1" class="input" type="password">
+    <label class="panel-sub">暗号化パスフレーズ（確認）</label>
+    <input id="syncPhrase2" class="input" type="password">
+    <p class="sub">⚠ パスフレーズを忘れるとサーバ上のデータは誰にも復元できません（端末内データと JSON バックアップは無事）。</p>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal()">キャンセル</button>
+      <button class="btn" onclick="doEnableSync(this)">有効化</button>
+    </div>
+  `);
+}
+
+async function doEnableSync(btn){
+  const cfg = parseFirebaseConfig(document.getElementById("syncCfg").value || "");
+  const email = (document.getElementById("syncEmail").value || "").trim();
+  const pass = document.getElementById("syncPass").value || "";
+  const p1 = document.getElementById("syncPhrase1").value || "";
+  const p2 = document.getElementById("syncPhrase2").value || "";
+  if(!cfg){ toast("Firebase 設定を読み取れません（apiKey / projectId / appId が必要）"); return; }
+  if(!email || !email.includes("@")){ toast("メールアドレスを入力してください"); return; }
+  if(pass.length < 8){ toast("パスワードは8文字以上にしてください"); return; }
+  if(p1.length < 8){ toast("パスフレーズは8文字以上にしてください"); return; }
+  if(p1 !== p2){ toast("パスフレーズ（確認）が一致しません"); return; }
+  btn.disabled = true;
+  btn.textContent = "設定中…（鍵の生成に数秒かかります）";
+  try{
+    await enableSync(cfg, email, pass, p1);
+    closeModal();
+    render();
+  }catch(e){
+    btn.disabled = false;
+    btn.textContent = "有効化";
+    toast("設定に失敗: " + String((e && e.message) || e).slice(0, 100));
+  }
+}
+
+async function doSyncRelogin(btn){
+  const pass = document.getElementById("syncReloginPass").value || "";
+  if(!pass){ toast("パスワードを入力してください"); return; }
+  btn.disabled = true;
+  try{
+    const fb = await syncApp();
+    const authInst = fb.auth.getAuth(SYNC_RT.appInst);
+    await fb.auth.signInWithEmailAndPassword(authInst, SYNC.email, pass);
+    closeModal();
+    setSyncStatus("idle");
+    await syncNow({ toast:true });
+  }catch(e){
+    btn.disabled = false;
+    toast("ログインに失敗: " + String((e && e.message) || e).slice(0, 100));
+  }
+}
+
+function disableSync(){
+  SYNC = null;
+  SYNC_RT.key = null;
+  saveSync();
+  setSyncStatus("off");
+  closeModal();
+  render();
+  toast("同期を無効化しました（端末内データは残っています）");
+}
 
 // テーマ（auto/light/dark）。設定は保存キーと別の localStorage キーに置く（casebook:v2 は不変）
 const THEME_KEY = "casebook:theme";
@@ -1440,6 +1968,7 @@ function refreshNav(){
 async function saveNow(options = {}){
   SAVE_OK = await Store.save(DB);
   LAST_SAVE_AT = new Date().toISOString();
+  if(SAVE_OK){ syncAfterSave(); }
   if(options.toast){
     toast(SAVE_OK ? "保存しました " + timeLabel(LAST_SAVE_AT) : "保存に失敗しました");
   }
@@ -2203,6 +2732,13 @@ function renderListV21(){
       </div>
     </div>
     <div class="list-foot">
+      <span class="panel-sub">Sync：<span data-sync-status>${esc(syncStatusLabel())}</span></span>
+      <div class="theme-seg">
+        ${SYNC && SYNC.enabled ? `<button class="chip" onclick="syncNow({toast:true})">今すぐ</button>` : ""}
+        <button class="chip" onclick="showSyncModal()">設定</button>
+      </div>
+    </div>
+    <div class="list-foot">
       <span class="panel-sub">テーマ</span>
       <div class="theme-seg">
         <button class="chip ${THEME === "auto" ? "on" : ""}" onclick="setTheme('auto')">Auto</button>
@@ -2712,14 +3248,18 @@ function renderTodoLike(caseObj, day, kind){
 
 function renderPhotoGrid(caseObj){
   if(!caseObj.admission.photoIds.length){ return `<div class="empty" style="grid-column:1/-1">写真はまだありません。</div>`; }
-  return caseObj.admission.photoIds.map((id) => `
+  return caseObj.admission.photoIds.map((id) => PHOTO_URLS[id] ? `
     <div class="photo-card">
-      <img src="${esc(PHOTO_URLS[id] || "")}" alt="" onclick="openPhoto('${id}')">
+      <img src="${esc(PHOTO_URLS[id])}" alt="" onclick="openPhoto('${id}')">
       <div class="photo-actions">
         <button class="compact-btn" onclick="openPhoto('${id}')">表示</button>
         <button class="compact-btn" onclick="sharePhoto('${id}')">共有</button>
         <button class="compact-btn" onclick="deletePhoto('${caseObj.id}','${id}')">削除</button>
       </div>
+    </div>
+  ` : `
+    <div class="photo-card">
+      <div class="empty" style="padding:18px 8px">別端末内の写真（同期対象外）</div>
     </div>
   `).join("");
 }
@@ -2965,8 +3505,10 @@ async function boot(){
   LAST_SAVE_AT = new Date().toISOString();
   render();
   Backups.snapshotToday(false).catch(() => {});  // 待たない（IndexedDB 不調でも起動を止めない）
+  syncNow();  // 同期未設定なら何もしない。失敗してもローカル動作は不変
   document.addEventListener("visibilitychange", () => {
     if(document.visibilityState === "visible"){
+      syncNow();
       let changed = false;
       DB.cases.forEach((caseObj) => {
         if(LOGIC.applyPlannedDischarge(caseObj, todayISO())){ changed = true; }
