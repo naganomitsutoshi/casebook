@@ -179,4 +179,13 @@ const disPolluted = L.buildDischargeExport(cDis);
 if (!disPolluted.includes("培養結果")) { console.error("NG: 末尾に空 day があると Unresolved Waiting が消える"); process.exit(1); }
 console.log("v8.0 (getLastMeaningfulDay / polluted-days rescue): OK");
 
+// 11) v8.0: parseBackup（バックアップ検証）
+const goodBk = JSON.stringify({ app: "casebook", exportedAt: "2026-07-06T09:00:00.000Z", data: { version: 2, cases: [mkCase()] }, stats: { days: {}, totals: { recordDays: 3 } }, theme: "dark", settings: { rxWeekdays: [1, 4] } });
+const pb = L.parseBackup(goodBk);
+if (!pb.ok || pb.data.cases.length !== 1 || pb.theme !== "dark" || !pb.stats || !pb.settings) { console.error("NG: parseBackup が正しい payload を受理しない"); process.exit(1); }
+if (!L.parseBackup("{oops").error) { console.error("NG: parseBackup が壊れた JSON を弾かない"); process.exit(1); }
+if (L.parseBackup(JSON.stringify({ app: "other", data: {} })).ok) { console.error("NG: parseBackup が別アプリの JSON を受理する"); process.exit(1); }
+if (L.parseBackup(JSON.stringify({ app: "casebook" })).ok) { console.error("NG: parseBackup が data 無しを受理する"); process.exit(1); }
+console.log("v8.0 (parseBackup): OK");
+
 console.log("ALL TESTS PASSED");

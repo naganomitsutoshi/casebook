@@ -824,6 +824,23 @@ function logicFactory(){
     return lines.join("\n");
   }
 
+  // バックアップ JSON の検証（写真は対象外）。復元は呼び出し側で確認を挟む
+  function parseBackup(raw){
+    var payload;
+    try { payload = JSON.parse(raw); } catch(_e){ return { ok:false, error:"JSONとして読めません" }; }
+    if(!payload || payload.app !== "casebook" || !payload.data || typeof payload.data !== "object"){
+      return { ok:false, error:"Casebook のバックアップファイルではありません" };
+    }
+    return {
+      ok:true,
+      data:normalizeData(payload.data),
+      stats:payload.stats && typeof payload.stats === "object" && payload.stats.days ? payload.stats : null,
+      theme:typeof payload.theme === "string" ? payload.theme : "",
+      settings:payload.settings && typeof payload.settings === "object" ? payload.settings : null,
+      exportedAt:typeof payload.exportedAt === "string" ? payload.exportedAt : ""
+    };
+  }
+
   function prevDateISO(iso){
     var d = new Date(iso + "T12:00:00");
     d.setDate(d.getDate() - 1);
@@ -872,6 +889,7 @@ function logicFactory(){
     dayNumber:dayNumber,
     buildDailyExport:buildDailyExport,
     buildDischargeExport:buildDischargeExport,
+    parseBackup:parseBackup,
     prevDateISO:prevDateISO,
     computeStreak:computeStreak,
     pruneStatsDays:pruneStatsDays
@@ -1671,6 +1689,69 @@ function copyDailyExport(){
   }, `コピーしました — ${msg}（連続 ${exportStreak() + (exportedOn(todayISO()) ? 0 : 1)} 日）`);
 }
 
+// バックアップ（casebook:v2＋stats＋theme＋settings。写真=IndexedDB は対象外）
+function buildBackupPayload(){
+  let settings = null;
+  try { settings = JSON.parse(localStorage.getItem("casebook:settings") || "null"); } catch(e) {}
+  return { app:"casebook", exportedAt:LOGIC.isoNow(), data:DB, stats:STATS, theme:THEME, settings };
+}
+
+async function downloadBackup(){
+  const name = "casebook-backup-" + todayISO() + ".json";
+  const blob = new Blob([JSON.stringify(buildBackupPayload())], { type:"application/json" });
+  const file = new File([blob], name, { type:"application/json" });
+  if(navigator.share && navigator.canShare && navigator.canShare({ files:[file] })){
+    await navigator.share({ files:[file], title:name });
+    toast("共有シートを開きました");
+    return;
+  }
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  toast("バックアップをダウンロードしました");
+}
+
+let PENDING_RESTORE = null;
+
+function handleRestoreInput(input){
+  const file = (input.files || [])[0];
+  input.value = "";
+  if(!file){ return; }
+  const reader = new FileReader();
+  reader.onload = () => {
+    const parsed = LOGIC.parseBackup(String(reader.result || ""));
+    if(!parsed.ok){ toast("復元できません: " + parsed.error); return; }
+    PENDING_RESTORE = parsed;
+    const n = parsed.data.cases.filter((c) => !c.deletedAt).length;
+    const stamp = parsed.exportedAt ? parsed.exportedAt.slice(0,16).replace("T"," ") + " 時点・" : "";
+    confirmAction("バックアップから復元", stamp + "症例 " + n + " 件に置き換えます。現在のデータは上書きされます（写真は対象外）。", "doRestoreBackup()", "復元");
+  };
+  reader.readAsText(file);
+}
+
+async function doRestoreBackup(){
+  const parsed = PENDING_RESTORE;
+  PENDING_RESTORE = null;
+  closeModal();
+  if(!parsed){ return; }
+  DB = parsed.data;
+  if(parsed.stats){
+    STATS = { days:parsed.stats.days, totals:Object.assign({ recordDays:0 }, parsed.stats.totals) };
+    saveStats();
+  }
+  if(parsed.settings){
+    try { localStorage.setItem("casebook:settings", JSON.stringify(parsed.settings)); } catch(e) {}
+  }
+  VIEW = { name:"list", caseId:null, tab:"today", filter:"active" };
+  await saveNow();
+  if(["auto","light","dark"].includes(parsed.theme)){ setTheme(parsed.theme); }
+  else { render(); }
+  toast("復元しました");
+}
+
 function copyDischargeExport(caseId){
   const caseObj = findCase(caseId);
   const text = LOGIC.buildDischargeExport(caseObj);
@@ -1744,6 +1825,13 @@ function renderListV21(){
     </div>
     <div class="list-foot">
       <span class="panel-sub">累計 ${DB.cases.filter((c) => !c.deletedAt).length} 症例 ・ 記録 ${STATS.totals.recordDays || 0} 日</span>
+    </div>
+    <div class="list-foot">
+      <span class="panel-sub">Data（写真は対象外）</span>
+      <div class="theme-seg">
+        <button class="chip" onclick="downloadBackup()">バックアップ</button>
+        <label class="chip file-btn">復元<input type="file" accept="application/json,.json" onchange="handleRestoreInput(this)"></label>
+      </div>
     </div>
     <div class="list-foot">
       <span class="panel-sub">テーマ</span>
