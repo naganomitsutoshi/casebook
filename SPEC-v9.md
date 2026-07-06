@@ -33,3 +33,38 @@
 
 - smoke: カードにタスク本文が出る／クイック追加 input／cardCheck で done＋保存される／severity 地色クラス／Meds・Events が折りたたみで件数表示
 - 既存 verify は無改修で全通過すること（純ロジック不変の裏取り）
+
+---
+
+# SPEC-v9.1 — イベント追加バグ修正＋全項目の件数折りたたみ（2026-07-07）
+
+> CEO報告（実機QA）起点の修正3点。表示層＋関数リネームのみ。データモデル・保存キー不変。
+
+## 1. 【バグ修正】イベント追加が無反応
+
+- 原因: 関数名 `createEvent` がブラウザ内蔵の `document.createEvent` と衝突。HTML直書きの
+  onclick/onkeydown はスコープ連鎖（要素→document→window）で名前を解決するため、内蔵APIが
+  先に見つかり自作関数は一度も呼ばれず `TypeError`（引数不足）で終わっていた
+- v8.2 のトースト対策で直らなかった理由: 自作関数自体が実行されないため
+- テストがすり抜けた理由: smoke は `createEvent()` を直接呼んでおり、インラインハンドラ経由の
+  名前解決を通らなかった
+- 修正: `createEventItem` にリネーム（定義＋インライン3箇所＋テスト）
+- 回帰ガード: smoke にインラインハンドラの全関数名を DOM 内蔵API名ブロックリストと突き合わせる検査を追加
+
+## 2. 退院予定日の導線改善
+
+- エンジン上は従来から未来日付OK（ヘッドレスブラウザで確認済み）。設定欄が「編集」折りたたみの
+  中にしかなく、退院操作の場である Discharge Summary から入れられなかったのが実態
+- Discharge Summary（active のみ）に退院予定日の date input を追加。編集内と同じ
+  `updatePlannedDischarge` を共用。ラベルに「未来の日付OK・当日になると自動で退院扱い」を明記
+
+## 3. Today タブ全項目を件数付き折りたたみに統一
+
+- Problem List（継続中n）／To Do（done/全）／Waiting（未解決n）／Contingency Plan（n）／Hooks（n）
+  を `.collapse` 化。Admission Note・Discharge Summary はチェック済み/全（n/7 等）を見出しに追加
+- 既定の開閉: Problem List・To Do＝開、他＝閉（Admission Note は入院当日のみ開、従来どおり）
+- 開閉状態は VIEW.open で保持（開いたまま追加しても閉じない・症例遷移でリセット、v9 と同機構）
+
+## 4. バージョン
+
+- APP_VERSION `v9.1`。実機QAは一覧下部の表記が v9.1 であることを最初に確認

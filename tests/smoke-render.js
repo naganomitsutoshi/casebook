@@ -87,9 +87,10 @@ vm.runInContext(mainSrc, sandbox);
   }
 
   // v6: 今日ビューの並び: Problem List → To Do → Waiting → Contingency Plan → Hooks
+  // （v9.1 から見出しは件数付き "<h2>To Do（1/2）</h2>" 形式）
   vm.runInContext("VIEW.tab='today'", sandbox);
   const todayHtml = vm.runInContext("renderCaseV21()", sandbox);
-  const order = ["Problem List", "To Do", "Waiting", "Contingency Plan", "Hooks"].map(s => todayHtml.indexOf("<h2>" + s + "</h2>"));
+  const order = ["Problem List", "To Do", "Waiting", "Contingency Plan", "Hooks"].map(s => todayHtml.indexOf("<h2>" + s + "（"));
   if (order.some(i => i < 0) || order.some((v, i) => i > 0 && v < order[i - 1])) {
     console.error("NG: 今日ビューのパネル並びが仕様と違う: " + order.join(",")); process.exit(1);
   }
@@ -205,7 +206,7 @@ vm.runInContext(mainSrc, sandbox);
   // v8.2: 空タイトルの追加は無反応でなくトーストで知らせる
   vm.runInContext("VIEW={name:'case',caseId:c.id,tab:'today',filter:'active'}; renderCaseV21()", sandbox);
   sandbox.document.getElementById("evTitle").value = "";
-  vm.runInContext("createEvent()", sandbox);
+  vm.runInContext("createEventItem()", sandbox);
   if (sandbox.document.getElementById("toast").textContent !== "タイトルを入力してください") {
     console.error("NG: 空タイトル追加でフィードバックが出ない"); process.exit(1);
   }
@@ -220,8 +221,8 @@ vm.runInContext(mainSrc, sandbox);
   sandbox.document.getElementById("evType").value = "test";
   sandbox.document.getElementById("evNote").value = "";
   const evBefore = vm.runInContext("c.events.length", sandbox);
-  vm.runInContext("createEvent()", sandbox);
-  if (vm.runInContext("c.events.length", sandbox) !== evBefore + 1) { console.error("NG: createEvent でイベントが追加されない"); process.exit(1); }
+  vm.runInContext("createEventItem()", sandbox);
+  if (vm.runInContext("c.events.length", sandbox) !== evBefore + 1) { console.error("NG: createEventItem でイベントが追加されない"); process.exit(1); }
   if (!sandbox.document.getElementById("toast").textContent.includes("イベントを追加")) { console.error("NG: イベント追加の成功トーストが出ない"); process.exit(1); }
   const tlAfterCreate = vm.runInContext("(VIEW.tab='timeline', renderCaseV21())", sandbox);
   if (!tlAfterCreate.includes("胸部CT")) { console.error("NG: 追加イベントが Timeline に出ない"); process.exit(1); }
@@ -270,6 +271,31 @@ vm.runInContext(mainSrc, sandbox);
   const caseV9 = vm.runInContext("VIEW={name:'case',caseId:c.id,tab:'today',filter:'active'}; renderCaseV21()", sandbox);
   for (const n of ['id="medsBody"', 'id="eventsBody"', "Medications（", "Events（"]) {
     if (!caseV9.includes(n)) { console.error("NG: v9折りたたみ「" + n + "」が無い"); process.exit(1); }
+  }
+
+  // v9.1: Today タブ全項目が件数付き折りたたみ
+  const caseV91 = vm.runInContext("VIEW={name:'case',caseId:c.id,tab:'today',filter:'active'}; VIEW.caseEdit=false; renderCaseV21()", sandbox);
+  for (const n of ['id="problemsBody"', 'id="todoBody"', 'id="waitBody"', 'id="contingencyBody"', 'id="hooksBody"',
+    "Problem List（", "To Do（", "Waiting（", "Contingency Plan（", "Hooks（", "Admission Note（", "Discharge Summary（"]) {
+    if (!caseV91.includes(n)) { console.error("NG: v9.1件数折りたたみ「" + n + "」が無い"); process.exit(1); }
+  }
+  // v9.1: 退院予定日は編集を開かなくても Discharge Summary から設定できる
+  if (!caseV91.includes("updatePlannedDischarge")) {
+    console.error("NG: Discharge Summary に退院予定日入力が無い"); process.exit(1);
+  }
+  // v9.1: インラインハンドラの関数名が DOM 内蔵APIと衝突しない
+  // （createEvent が document.createEvent に解決され追加ボタンが無反応だった事故の回帰ガード）
+  const DOM_BUILTINS = new Set(["createEvent", "open", "close", "write", "writeln", "clear", "focus", "blur",
+    "print", "stop", "find", "alert", "confirm", "prompt", "scroll", "scrollTo", "scrollBy", "remove", "click",
+    "append", "prepend", "normalize", "matches", "closest", "animate", "select", "getSelection", "createElement",
+    "createTextNode", "createRange", "importNode", "adoptNode", "execCommand", "hasFocus", "elementFromPoint",
+    "evaluate", "releaseEvents", "captureEvents", "postMessage", "fetch", "toString", "requestFullscreen"]);
+  const inlineCalls = [...html.matchAll(/on(?:click|change|input|keydown)="([^"]*)"/g)]
+    .flatMap(m => [...m[1].matchAll(/([A-Za-z_$][A-Za-z0-9_$]*)\s*\(/g)].map(x => x[1]));
+  for (const name of new Set(inlineCalls)) {
+    if (DOM_BUILTINS.has(name)) {
+      console.error("NG: インラインハンドラの関数名「" + name + "」が DOM 内蔵APIと衝突（自作関数が呼ばれず無反応になる）"); process.exit(1);
+    }
   }
 
   // render() 本体もDOMスタブ上で例外なく通るか

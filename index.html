@@ -1069,7 +1069,7 @@ if(typeof module !== "undefined"){ module.exports = LOGIC; }
 </script>
 
 <script>
-const APP_VERSION = "v9.0";  // 一覧下部に表示。実機がどの版を配信されているかの確認用
+const APP_VERSION = "v9.1";  // 一覧下部に表示。実機がどの版を配信されているかの確認用
 const KEY = "casebook:v2";
 const PHOTO_DB = "casebook-photos";
 const PHOTO_STORE = "photos";
@@ -1783,7 +1783,9 @@ function doDeleteMed(medId){
   persist();
 }
 
-function createEvent(){
+// 旧名 createEvent はインライン onclick のスコープ連鎖で document.createEvent（内蔵API）に
+// 解決され一度も呼ばれなかった。内蔵APIと衝突しない名前にすること（テストで検査）
+function createEventItem(){
   const caseObj = currentCase();
   const titleInput = document.getElementById("evTitle");
   const title = titleInput.value.trim();
@@ -2381,7 +2383,7 @@ function renderCaseV21(){
               <input class="input" type="date" value="${esc(caseObj.dischargedAt)}" onchange="updateCaseDate('${caseObj.id}','dischargedAt',this.value)">
             </div>` : ""}
             ${caseObj.status === "active" ? `<div>
-              <label class="panel-sub">退院予定日（当日に自動で退院扱い）</label>
+              <label class="panel-sub">退院予定日（未来の日付OK・当日に自動で退院扱い）</label>
               <input class="input" type="date" value="${esc(caseObj.plannedDischargeAt || "")}" onchange="updatePlannedDischarge('${caseObj.id}',this.value)">
             </div>` : ""}
           </div>
@@ -2442,17 +2444,30 @@ function renderTodayTabV21(caseObj, day){
   const medsOpen = sectionOpen("medsBody", false);
   const eventsOpen = sectionOpen("eventsBody", false);
   const summaryOpen = sectionOpen("summaryBody", false);
+  const problemsOpen = sectionOpen("problemsBody", true);
+  const todoOpen = sectionOpen("todoBody", true);
+  const waitOpen = sectionOpen("waitBody", false);
+  const contingencyOpen = sectionOpen("contingencyBody", false);
+  const hooksOpen = sectionOpen("hooksBody", false);
   const discharged = caseObj.status !== "active";
   const todoDone = day.todos.filter((t) => t.done).length;
   const todoAll = day.todos.length;
+  const problemCount = caseObj.problems.filter((p) => p.active !== false).length;
+  const waitCount = day.waits.filter((w) => !w.resolved).length;
   return `
     ${!discharged && todoAll ? `<div class="today-progress"><div class="progress"><i style="width:${Math.round(todoDone / todoAll * 100)}%"></i></div><span class="panel-sub mono">To Do ${todoDone}/${todoAll}</span></div>` : ""}
     <section class="shell" style="margin-top:14px">
       <div class="stack">
         ${discharged ? renderPendingAfterDischarge(caseObj, day) : ""}
-        <section class="panel">
-          <div class="panel-head"><h2>Problem List</h2><div class="panel-sub">問題リスト</div></div>
-          <div class="panel-body list">
+        <section class="collapse">
+          <div class="collapse-head">
+            <div>
+              <h2>Problem List（${problemCount}）</h2>
+              <div class="panel-sub">問題リスト・件数は継続中のみ</div>
+            </div>
+            <button class="compact-btn" onclick="toggleSection(this,'problemsBody')">${problemsOpen ? "閉じる" : "開く"}</button>
+          </div>
+          <div class="collapse-body list ${problemsOpen ? "" : "hide"}" id="problemsBody">
             ${caseObj.problems.length ? caseObj.problems.map((problem, index) => `
               <article class="prob-card">
                 <div class="prob-top">
@@ -2474,30 +2489,54 @@ function renderTodayTabV21(caseObj, day){
           </div>
         </section>
 
-        <section class="panel">
-          <div class="panel-head"><h2>To Do</h2><div class="panel-sub">今日やる・未完了は翌日に繰り越し</div></div>
-          <div class="panel-body">
+        <section class="collapse">
+          <div class="collapse-head">
+            <div>
+              <h2>To Do（${todoDone}/${todoAll}）</h2>
+              <div class="panel-sub">今日やる・未完了は翌日に繰り越し</div>
+            </div>
+            <button class="compact-btn" onclick="toggleSection(this,'todoBody')">${todoOpen ? "閉じる" : "開く"}</button>
+          </div>
+          <div class="collapse-body ${todoOpen ? "" : "hide"}" id="todoBody">
             ${renderTodoLike(caseObj, day, "todo")}
           </div>
         </section>
 
-        <section class="panel">
-          <div class="panel-head"><h2>Waiting</h2><div class="panel-sub">待ち・未解決は翌日に繰り越し</div></div>
-          <div class="panel-body">
+        <section class="collapse">
+          <div class="collapse-head">
+            <div>
+              <h2>Waiting（${waitCount}）</h2>
+              <div class="panel-sub">待ち・件数は未解決のみ・翌日に繰り越し</div>
+            </div>
+            <button class="compact-btn" onclick="toggleSection(this,'waitBody')">${waitOpen ? "閉じる" : "開く"}</button>
+          </div>
+          <div class="collapse-body ${waitOpen ? "" : "hide"}" id="waitBody">
             ${renderTodoLike(caseObj, day, "wait")}
           </div>
         </section>
 
-        <section class="panel">
-          <div class="panel-head"><h2>Contingency Plan</h2><div class="panel-sub">もし◯◯なら→◯◯する</div></div>
-          <div class="panel-body">
+        <section class="collapse">
+          <div class="collapse-head">
+            <div>
+              <h2>Contingency Plan（${caseObj.contingency.length}）</h2>
+              <div class="panel-sub">もし◯◯なら→◯◯する</div>
+            </div>
+            <button class="compact-btn" onclick="toggleSection(this,'contingencyBody')">${contingencyOpen ? "閉じる" : "開く"}</button>
+          </div>
+          <div class="collapse-body ${contingencyOpen ? "" : "hide"}" id="contingencyBody">
             ${renderContingencyList(caseObj)}
           </div>
         </section>
 
-        <section class="panel">
-          <div class="panel-head"><h2>Hooks</h2><div class="panel-sub">引っかかり・学びや違和感のメモ</div></div>
-          <div class="panel-body">
+        <section class="collapse">
+          <div class="collapse-head">
+            <div>
+              <h2>Hooks（${day.hooks.length}）</h2>
+              <div class="panel-sub">引っかかり・学びや違和感のメモ</div>
+            </div>
+            <button class="compact-btn" onclick="toggleSection(this,'hooksBody')">${hooksOpen ? "閉じる" : "開く"}</button>
+          </div>
+          <div class="collapse-body ${hooksOpen ? "" : "hide"}" id="hooksBody">
             ${renderTodoLike(caseObj, day, "hook")}
           </div>
         </section>
@@ -2507,7 +2546,7 @@ function renderTodayTabV21(caseObj, day){
         <section class="collapse">
           <div class="collapse-head">
             <div>
-              <h2>Admission Note</h2>
+              <h2>Admission Note（${ROUTINE.filter((item) => caseObj.admission.routine[item.k]).length}/${ROUTINE.length}）</h2>
               <div class="panel-sub">入院時記録・写真とテンプレ節チェック</div>
             </div>
             <button class="compact-btn" onclick="toggleSection(this,'admissionBody')">${admitExpanded ? "閉じる" : "開く"}</button>
@@ -2575,9 +2614,9 @@ function renderTodayTabV21(caseObj, day){
                 <option value="other">その他</option>
               </select>
             </div>
-            <div style="margin-top:10px"><input id="evTitle" class="input" placeholder="タイトル" enterkeyhint="done" onkeydown="if(event.key==='Enter'){createEvent()}"></div>
-            <div style="margin-top:10px"><input id="evNote" class="input" placeholder="メモ" enterkeyhint="done" onkeydown="if(event.key==='Enter'){createEvent()}"></div>
-            <div class="inline-actions" style="margin-top:10px"><button class="btn btn-ghost" onclick="createEvent()">追加</button></div>
+            <div style="margin-top:10px"><input id="evTitle" class="input" placeholder="タイトル" enterkeyhint="done" onkeydown="if(event.key==='Enter'){createEventItem()}"></div>
+            <div style="margin-top:10px"><input id="evNote" class="input" placeholder="メモ" enterkeyhint="done" onkeydown="if(event.key==='Enter'){createEventItem()}"></div>
+            <div class="inline-actions" style="margin-top:10px"><button class="btn btn-ghost" onclick="createEventItem()">追加</button></div>
             <div class="event-list" style="margin-top:14px">${renderEventList(caseObj)}</div>
           </div>
         </section>
@@ -2585,8 +2624,8 @@ function renderTodayTabV21(caseObj, day){
         <section class="collapse">
           <div class="collapse-head">
             <div>
-              <h2>Discharge Summary</h2>
-              <div class="panel-sub">退院サマリ・退院書き出しに反映</div>
+              <h2>Discharge Summary（${DC_ROUTINE.filter((item) => caseObj.dischargeChecklist[item.k]).length}/${DC_ROUTINE.length}）</h2>
+              <div class="panel-sub">退院サマリ・チェックリスト進捗・退院書き出しに反映</div>
             </div>
             <button class="compact-btn" onclick="toggleSection(this,'summaryBody')">${summaryOpen ? "閉じる" : "開く"}</button>
           </div>
@@ -2606,6 +2645,10 @@ function renderTodayTabV21(caseObj, day){
             <textarea class="textarea" rows="3" oninput="updateCaseText('${caseObj.id}','summary.outcome',this.value)">${esc(caseObj.summary.outcome)}</textarea>
             <label class="panel-sub" style="display:block;margin-top:10px">自分の診療</label>
             <textarea class="textarea" rows="4" oninput="updateCaseText('${caseObj.id}','summary.myPractice',this.value)">${esc(caseObj.summary.myPractice || "")}</textarea>
+            ${caseObj.status === "active" ? `
+            <label class="panel-sub" style="display:block;margin-top:10px">退院予定日（未来の日付OK・当日になると自動で退院扱い）</label>
+            <input class="input" type="date" value="${esc(caseObj.plannedDischargeAt || "")}" onchange="updatePlannedDischarge('${caseObj.id}',this.value)">
+            ` : ""}
             <div class="inline-actions" style="margin-top:12px">
               ${caseObj.status === "active"
                 ? `<button class="btn btn-primary" onclick="setCaseStatus('${caseObj.id}','discharged')">退院にする</button>`
