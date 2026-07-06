@@ -198,4 +198,19 @@ if (L.buildDailyExport({ version: 2, cases: [cRoom] }, "2026-07-04").includes("R
 if (L.buildDischargeExport(cRoom).includes("R999X")) { console.error("NG: 退院書き出しに部屋番号が混入"); process.exit(1); }
 console.log("v8.0 (room: persisted, never exported): OK");
 
+// 13) v8.0: 退院予定日→自動退院（applyPlannedDischarge）
+const cPd = L.ensureCaseShape(Object.assign(mkCase(), { plannedDischargeAt: "2026-07-05" }));
+if (cPd.plannedDischargeAt !== "2026-07-05") { console.error("NG: ensureCaseShape が plannedDischargeAt を保全しない"); process.exit(1); }
+if (L.applyPlannedDischarge(cPd, "2026-07-04") !== false || cPd.status !== "active") { console.error("NG: 予定日前なのに退院発火"); process.exit(1); }
+Object.assign(cPd, L.rolloverCase(cPd, "2026-07-04"));
+if (!L.buildDailyExport({ version: 2, cases: [cPd] }, "2026-07-04").includes("- 退院予定: 2026-07-05")) { console.error("NG: 日次書き出しに退院予定行が無い"); process.exit(1); }
+if (L.applyPlannedDischarge(cPd, "2026-07-05") !== true) { console.error("NG: 予定日当日に発火しない"); process.exit(1); }
+if (cPd.status !== "discharged" || cPd.dischargedAt !== "2026-07-05" || cPd.plannedDischargeAt !== "") { console.error("NG: 発火後の状態が不正（dischargedAt=予定日・予定日クリア）"); process.exit(1); }
+if (L.applyPlannedDischarge(cPd, "2026-07-06") !== false) { console.error("NG: 発火が冪等でない"); process.exit(1); }
+// 予定日超過（数日開かなかった場合）も発火し、退院日は予定日になる
+const cPd2 = L.ensureCaseShape(Object.assign(mkCase(), { plannedDischargeAt: "2026-07-02" }));
+L.applyPlannedDischarge(cPd2, "2026-07-04");
+if (cPd2.status !== "discharged" || cPd2.dischargedAt !== "2026-07-02") { console.error("NG: 予定日超過の発火・退院日が不正"); process.exit(1); }
+console.log("v8.0 (applyPlannedDischarge): OK");
+
 console.log("ALL TESTS PASSED");

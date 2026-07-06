@@ -533,6 +533,7 @@ function logicFactory(){
       room:"",
       admittedAt:"",
       dischargedAt:null,
+      plannedDischargeAt:"",
       admission:{ note:"", photoIds:[], routine:{} },
       patientSummary:"",
       contingency:[],
@@ -550,6 +551,7 @@ function logicFactory(){
     out.patientSummary = typeof out.patientSummary === "string" ? out.patientSummary : "";
     // 部屋番号は識別性の低い運用情報のみ（氏名不可）。書き出しには載せない
     out.room = typeof out.room === "string" ? out.room : "";
+    out.plannedDischargeAt = typeof out.plannedDischargeAt === "string" ? out.plannedDischargeAt : "";
     out.contingency = Array.isArray(out.contingency) ? out.contingency.map(function(item){
       return { id:item && item.id ? item.id : makeId(), text:item && item.text ? String(item.text) : "" };
     }).filter(function(item){ return item.text; }) : [];
@@ -651,6 +653,17 @@ function logicFactory(){
     return c;
   }
 
+  // 退院予定日の当日判定（アプリを開いた時に発火）。発火時に予定日をクリアして
+  // 「入院中へ戻す」→次回起動で再退院、のループを防ぐ
+  function applyPlannedDischarge(caseObj, today){
+    if(!caseObj || caseObj.status !== "active" || caseObj.deletedAt){ return false; }
+    if(!caseObj.plannedDischargeAt || caseObj.plannedDischargeAt > today){ return false; }
+    caseObj.status = "discharged";
+    caseObj.dischargedAt = caseObj.plannedDischargeAt;
+    caseObj.plannedDischargeAt = "";
+    return true;
+  }
+
   function purgeTrash(data, todayIso){
     var model = normalizeData(data);
     var cutoff = new Date(todayIso + "T00:00:00").getTime() - 30 * 86400000;
@@ -693,6 +706,9 @@ function logicFactory(){
       lines.push("## Case: " + (sev ? "【" + sev + "】" : "") + formatLabel(caseObj) + "（病日" + dayNumber(caseObj, today) + "）");
       if(caseObj.patientSummary){
         lines.push("P: " + caseObj.patientSummary.replace(/\n/g, " "));
+      }
+      if(caseObj.plannedDischargeAt){
+        lines.push("- 退院予定: " + caseObj.plannedDischargeAt);
       }
       lines.push("### Problem List");
       var activeProblems = caseObj.problems.filter(function(p){ return p.active !== false && p.title; });
@@ -885,6 +901,7 @@ function logicFactory(){
     getLastMeaningfulDay:getLastMeaningfulDay,
     ensureTodayDay:ensureTodayDay,
     rolloverCase:rolloverCase,
+    applyPlannedDischarge:applyPlannedDischarge,
     purgeTrash:purgeTrash,
     formatLabel:formatLabel,
     severityLabel:severityLabel,
@@ -1632,7 +1649,26 @@ function setCaseStatus(caseId, status){
   const caseObj = findCase(caseId);
   caseObj.status = status;
   caseObj.dischargedAt = status === "discharged" ? todayISO() : null;
+  if(status === "discharged"){ caseObj.plannedDischargeAt = ""; }
+  // 「入院中へ戻す」直後に過去の予定日で再退院しないよう掃除
+  if(status === "active" && caseObj.plannedDischargeAt && caseObj.plannedDischargeAt <= todayISO()){
+    caseObj.plannedDischargeAt = "";
+  }
   persist();
+}
+
+function updatePlannedDischarge(caseId, value){
+  const caseObj = findCase(caseId);
+  caseObj.plannedDischargeAt = value || "";
+  persist();
+}
+
+// 退院済みなのに退院書き出しがまだの症例（書き出し忘れナッジの判定）
+function dischargeExportPending(caseObj){
+  if(caseObj.status !== "discharged" || caseObj.deletedAt){ return false; }
+  if(!caseObj.lastExportedAt){ return true; }
+  if(!caseObj.dischargedAt){ return false; }
+  return new Date(caseObj.lastExportedAt).getTime() < new Date(caseObj.dischargedAt + "T00:00:00").getTime();
 }
 
 function trashCase(caseId){
@@ -1909,7 +1945,9 @@ function renderListV21(){
   const totalDone = active.reduce((sum, c) => sum + currentDay(c).todos.filter((t) => t.done).length, 0);
   const totalAll = totalDone + totalTodos;
   const showNudge = active.length > 0 && new Date().getHours() >= 17 && !exportedOn(todayISO());
+  const dcPending = DB.cases.filter(dischargeExportPending).length;
   return `
+    ${dcPending ? `<div class="nudge"><span>退院書き出しが未実施の症例が ${dcPending} 件</span><button class="btn btn-ghost" onclick="setFilter('discharged')">表示</button></div>` : ""}
     ${showNudge ? `<div class="nudge"><span>今日の Export がまだです</span><button class="btn btn-ghost" onclick="copyDailyExport()">Export</button></div>` : ""}
     <div class="toolbar">
       <button class="btn btn-primary" onclick="newCaseModal()">新規症例</button>
@@ -1964,6 +2002,8 @@ function renderCaseCardV21(caseObj){
       <div class="case-flags">
         ${sev ? `<span class="flag severity-${sev}">${esc(LOGIC.severityLabel(sev))}</span>` : ""}
         ${caseObj.status !== "active" ? `<span class="flag">退院</span>` : ""}
+        ${caseObj.status === "active" && caseObj.plannedDischargeAt ? `<span class="flag">退院予定 ${esc(caseObj.plannedDischargeAt.slice(5).replace("-","/"))}</span>` : ""}
+        ${dischargeExportPending(caseObj) ? `<span class="flag wait">書き出し未</span>` : ""}
         ${stats.todoOpen ? `<span class="flag todo">To Do ${stats.todoOpen}</span>` : ""}
         ${stats.waitOpen ? `<span class="flag wait">Waiting ${stats.waitOpen}</span>` : ""}
         ${noOpen && caseObj.status === "active" ? `<span class="flag clear">未処理なし</span>` : ""}
@@ -1993,6 +2033,7 @@ function renderCaseV21(){
               ${caseObj.room ? `<span class="mono">Rm ${esc(caseObj.room)}</span>` : ""}
               <span class="mono">入院 ${esc(caseObj.admittedAt || "")}</span>
               ${caseObj.dischargedAt ? `<span class="mono">退院 ${esc(caseObj.dischargedAt)}</span>` : ""}
+              ${caseObj.status === "active" && caseObj.plannedDischargeAt ? `<span class="mono">退院予定 ${esc(caseObj.plannedDischargeAt)}</span>` : ""}
             </div>
           </div>
           <div class="head-actions">
@@ -2024,6 +2065,10 @@ function renderCaseV21(){
             ${caseObj.dischargedAt ? `<div>
               <label class="panel-sub">退院日</label>
               <input class="input" type="date" value="${esc(caseObj.dischargedAt)}" onchange="updateCaseDate('${caseObj.id}','dischargedAt',this.value)">
+            </div>` : ""}
+            ${caseObj.status === "active" ? `<div>
+              <label class="panel-sub">退院予定日（当日に自動で退院扱い）</label>
+              <input class="input" type="date" value="${esc(caseObj.plannedDischargeAt || "")}" onchange="updatePlannedDischarge('${caseObj.id}',this.value)">
             </div>` : ""}
           </div>
           <div style="margin-top:8px">
@@ -2466,6 +2511,7 @@ async function boot(){
   const purged = LOGIC.purgeTrash(DB, todayISO());
   DB = purged.data;
   for(const caseObj of DB.cases){
+    LOGIC.applyPlannedDischarge(caseObj, todayISO());
     if(caseObj.status === "active" && !caseObj.deletedAt){
       Object.assign(caseObj, LOGIC.rolloverCase(caseObj, todayISO()));
     }
@@ -2478,6 +2524,7 @@ async function boot(){
     if(document.visibilityState === "visible"){
       let changed = false;
       DB.cases.forEach((caseObj) => {
+        if(LOGIC.applyPlannedDischarge(caseObj, todayISO())){ changed = true; }
         if(caseObj.status === "active" && !caseObj.deletedAt){
           const before = JSON.stringify(caseObj.days);
           Object.assign(caseObj, LOGIC.rolloverCase(caseObj, todayISO()));

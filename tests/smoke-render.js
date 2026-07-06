@@ -167,6 +167,19 @@ vm.runInContext(mainSrc, sandbox);
   if (daysBefore !== daysAfter) { console.error("NG: 退院済み症例の描画で days が増える（汚染バグ再発）"); process.exit(1); }
   if (!dischargedCaseHtml.includes("残タスク")) { console.error("NG: 退院済み症例の Today タブに最終日の内容が出ない"); process.exit(1); }
 
+  // v8.0: 退院予定日の表示（編集欄・ヘッダmeta・カードフラグ）と退院書き出しナッジ
+  vm.runInContext("c.plannedDischargeAt = '2099-01-01'; VIEW={name:'case',caseId:c.id,tab:'today',filter:'active'}; VIEW.caseEdit=true", sandbox);
+  const caseHtmlPd = vm.runInContext("renderCaseV21()", sandbox);
+  if (!caseHtmlPd.includes("退院予定日") || !caseHtmlPd.includes("updatePlannedDischarge") || !caseHtmlPd.includes("退院予定 2099-01-01")) {
+    console.error("NG: 退院予定日の編集欄/ヘッダ表示が無い"); process.exit(1);
+  }
+  const listHtmlPd = vm.runInContext("VIEW={name:'list',caseId:null,tab:'today',filter:'all'}; renderListV21()", sandbox);
+  if (!listHtmlPd.includes("退院予定 01/01")) { console.error("NG: カードに退院予定フラグが無い"); process.exit(1); }
+  if (!listHtmlPd.includes("退院書き出しが未実施") || !listHtmlPd.includes("書き出し未")) {
+    console.error("NG: 退院書き出し未実施ナッジ/フラグが無い"); process.exit(1);
+  }
+  vm.runInContext("c.plannedDischargeAt = ''; VIEW.caseEdit=false", sandbox);
+
   // render() 本体もDOMスタブ上で例外なく通るか
   vm.runInContext("render()", sandbox);
   vm.runInContext("VIEW={name:'list',caseId:null,tab:'today',filter:'active'}; render()", sandbox);
